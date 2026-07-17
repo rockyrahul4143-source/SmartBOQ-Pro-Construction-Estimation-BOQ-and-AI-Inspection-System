@@ -1,0 +1,92 @@
+version: "3.9"
+
+services:
+  # ──────────────────────────────────────────────
+  # PostgreSQL Database
+  # ──────────────────────────────────────────────
+  db:
+    image: postgres:15-alpine
+    container_name: smartboq_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-smartboq}
+      POSTGRES_USER: ${POSTGRES_USER:-smartboq_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-smartboq_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/scripts/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-smartboq_user} -d ${POSTGRES_DB:-smartboq}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ──────────────────────────────────────────────
+  # FastAPI Backend
+  # ──────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: smartboq_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-smartboq_user}:${POSTGRES_PASSWORD:-smartboq_password}@db:5432/${POSTGRES_DB:-smartboq}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - uploads_data:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -c "echo 'Waiting for DB...' &&
+             until python -c \"import psycopg2; psycopg2.connect('${DATABASE_URL}')\" 2>/dev/null; do sleep 1; done &&
+             echo 'DB ready. Running migrations...' &&
+             alembic upgrade head &&
+             echo 'Running seed data...' &&
+             python -m app.scripts.seed_data &&
+             echo 'Starting API server...' &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  # ──────────────────────────────────────────────
+  # React Frontend
+  # ──────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000/api/v1}
+    container_name: smartboq_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+  # ──────────────────────────────────────────────
+  # Nginx Reverse Proxy (Production)
+  # ──────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: smartboq_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+      - frontend
+    profiles:
+      - production
+
+volumes:
+  postgres_data:
+  uploads_data:

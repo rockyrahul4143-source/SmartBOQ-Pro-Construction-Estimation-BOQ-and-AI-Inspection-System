@@ -1,0 +1,80 @@
+# ── Environment & Secrets ─────────────────────────────
+.env
+.env.local
+.env.production
+*.env
+
+# ── Python ────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+*.egg
+.pytest_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+site/
+
+# ── Database (never commit DB files) ──────────────────
+*.db
+*.sqlite
+*.sqlite3
+
+# ── AI Model Weight Files (too large for GitHub) ──────
+# Upload these to Google Drive / HuggingFace instead
+backend/ml_models/*.h5
+backend/ml_models/*.pt
+backend/ml_models/*.pth
+backend/ml_models/*.pkl
+# Keep the README so people know what to put here
+!backend/ml_models/README.md
+
+# ── Dataset (tens of thousands of images) ────────────
+Datasets/
+dataset/
+
+# ── Node ──────────────────────────────────────────────
+node_modules/
+frontend/dist/
+.cache/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+frontend/.env.local
+
+# ── Uploads (user uploaded images) ───────────────────
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# ── IDE ───────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# ── OS ────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Test & Temp scripts ───────────────────────────────
+backend/test_*.ps1
+backend/check_imports.py
+backend/fix_inr.ps1
+
+# ── Logs ──────────────────────────────────────────────
+*.log
+logs/
+
+.github/workflows/
+
+*.ps1
