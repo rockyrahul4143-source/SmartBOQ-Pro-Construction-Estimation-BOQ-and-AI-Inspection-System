@@ -19,7 +19,7 @@ const DEFAULT_VALUES = {
   pcc_thickness: 0.075,
   column_length: 0.3, column_width: 0.3, floor_height: 3.0, num_columns: 0,
   beam_width: 0.23, beam_depth: 0.45, total_beam_length: 0,
-  slab_thickness: 0.125,
+  slab_length: 0, slab_width: 0, slab_thickness: 0.125,
   wall_thickness_external: 0.23, wall_thickness_internal: 0.115,
   total_external_wall_length: 0, total_internal_wall_length: 0, wall_height: 3.0,
   plaster_thickness_external: 0.020, plaster_thickness_internal: 0.012,
