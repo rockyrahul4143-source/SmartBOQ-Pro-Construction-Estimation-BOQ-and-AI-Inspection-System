@@ -1,6 +1,8 @@
 import axios, { type AxiosError } from 'axios'
 
-const BASE = (import.meta as any).env?.VITE_API_BASE_URL ?? '/api/v1'
+// VITE_API_BASE_URL is defined in .env.local for dev, and in Vercel env vars for production
+// Falls back to /api/v1 which is proxied by vite.config.ts to localhost:8000 in dev
+const BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
 
 export const api = axios.create({ baseURL: BASE })
 

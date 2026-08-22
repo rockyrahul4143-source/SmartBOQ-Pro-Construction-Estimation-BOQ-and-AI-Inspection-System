@@ -11,7 +11,50 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge'
 import { toast } from '@/hooks/useToast'
 
-const DEFAULT_VALUES = {
+// Full building form shape — mirrors backend BuildingBase schema exactly
+interface BuildingFormValues {
+  building_name: string
+  num_floors: number
+  plot_length: number
+  plot_width: number
+  excavation_depth: number
+  footing_length: number
+  footing_width: number
+  footing_depth: number
+  num_footings: number
+  pcc_thickness: number
+  column_length: number
+  column_width: number
+  floor_height: number
+  num_columns: number
+  beam_width: number
+  beam_depth: number
+  total_beam_length: number
+  slab_length: number
+  slab_width: number
+  slab_thickness: number
+  wall_thickness_external: number
+  wall_thickness_internal: number
+  total_external_wall_length: number
+  total_internal_wall_length: number
+  wall_height: number
+  plaster_thickness_external: number
+  plaster_thickness_internal: number
+  num_doors: number
+  door_width: number
+  door_height: number
+  num_windows: number
+  window_width: number
+  window_height: number
+  steel_percentage_slab: number
+  steel_percentage_column: number
+  steel_percentage_beam: number
+  waterproofing_area: number
+  tile_wastage_pct: number
+  paint_coats: number
+}
+
+const DEFAULT_VALUES: BuildingFormValues = {
   building_name: 'Main Building',
   num_floors: 1,
   plot_length: 0, plot_width: 0, excavation_depth: 1.5,
@@ -123,7 +166,7 @@ export default function BuildingsPage() {
   const [selectedBuildingId, setSelectedBuildingId] = useState('')
   const [isNewBuilding, setIsNewBuilding] = useState(false)
 
-  const { register, handleSubmit, reset, formState: { isSubmitting, isDirty } } = useForm({
+  const { register, handleSubmit, reset, formState: { isSubmitting, isDirty } } = useForm<BuildingFormValues>({
     defaultValues: DEFAULT_VALUES,
   })
 
