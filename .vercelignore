@@ -1,0 +1,10 @@
+backend/
+*.ipynb
+*.zip
+*.db
+Datasets/
+docs/
+nginx/
+*.bat
+*.ps1
+*.py
