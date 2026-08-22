@@ -5,7 +5,7 @@ services:
     region: oregon
     plan: free
     rootDir: backend
-    buildCommand: pip install -r requirements-deploy.txt
+    buildCommand: pip install --upgrade pip && pip install --only-binary=Pillow,numpy -r requirements-deploy.txt
     startCommand: python start_render.py
     healthCheckPath: /health
     envVars:
@@ -23,6 +23,8 @@ services:
         value: production
       - key: DEBUG
         value: "false"
+      - key: PYTHON_VERSION
+        value: "3.11.0"
 
 databases:
   - name: smartboq-db
