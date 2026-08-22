@@ -10,13 +10,13 @@ from app.models.project import BuildingType, ProjectStatus
 # ── Shared base ───────────────────────────────────────
 class ProjectBase(BaseModel):
     project_name: str
-    client_name: str
+    client_name: Optional[str] = None   # optional — not required for quick projects
     client_contact: Optional[str] = None
     client_email: Optional[str] = None
-    location: str
+    location: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
-    country: Optional[str] = "Pakistan"
+    country: Optional[str] = "India"
     building_type: BuildingType = BuildingType.RESIDENTIAL
     num_floors: int = 1
     total_built_up_area: Optional[float] = None
@@ -79,8 +79,8 @@ class ProjectListItem(BaseModel):
     id: UUID
     project_code: str
     project_name: str
-    client_name: str
-    location: str
+    client_name: Optional[str] = None
+    location: Optional[str] = None
     building_type: BuildingType
     num_floors: int
     status: ProjectStatus
