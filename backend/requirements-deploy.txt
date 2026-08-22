@@ -1,11 +1,10 @@
-# Production requirements for Render.com
-# Python 3.11.9 — all packages have pre-built wheels, no compilation needed
-# TensorFlow excluded (500MB+ — too large for free tier)
+# Production requirements for Render.com — Python 3.11
+# All packages have pre-built wheels for Python 3.11 on Linux
 
-# Web framework
 fastapi==0.111.0
 uvicorn[standard]==0.30.1
 python-multipart==0.0.9
+starlette==0.37.2
 
 # Database
 sqlalchemy==2.0.30
@@ -17,10 +16,11 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.1.3
 
-# Validation — pydantic v2 with pre-built pydantic-core wheels for Python 3.11
+# Validation — pydantic v2 with explicit pydantic-core pin
 pydantic==2.7.1
 pydantic-core==2.18.2
 pydantic-settings==2.3.0
+annotated-types==0.7.0
 email-validator==2.1.1
 
 # Reports
@@ -28,14 +28,14 @@ reportlab==4.2.0
 openpyxl==3.1.4
 xlsxwriter==3.2.0
 
-# DXF parsing
+# DXF
 ezdxf==1.3.3
 
-# Image processing — binary wheels only
+# Image
 Pillow==10.4.0
 numpy==1.26.4
 
-# Utilities
+# Utils
 python-dotenv==1.0.1
 httpx==0.27.0
 python-dateutil==2.9.0
