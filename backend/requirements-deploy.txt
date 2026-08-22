@@ -1,10 +1,10 @@
-# Production requirements for Render.com — Python 3.11
-# All packages have pre-built wheels for Python 3.11 on Linux
+# Production requirements for Render.com
+# Uses --prefer-binary in build command to force wheel downloads over source builds
+# This avoids maturin/Rust compilation for pydantic-core on Python 3.14
 
 fastapi==0.111.0
 uvicorn[standard]==0.30.1
 python-multipart==0.0.9
-starlette==0.37.2
 
 # Database
 sqlalchemy==2.0.30
@@ -16,11 +16,11 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.1.3
 
-# Validation — pydantic v2 with explicit pydantic-core pin
-pydantic==2.7.1
-pydantic-core==2.18.2
-pydantic-settings==2.3.0
-annotated-types==0.7.0
+# Validation — latest pydantic has wheels for Python 3.14
+pydantic>=2.9.0
+pydantic-core>=2.23.0
+pydantic-settings>=2.5.0
+annotated-types>=0.7.0
 email-validator==2.1.1
 
 # Reports
@@ -32,8 +32,7 @@ xlsxwriter==3.2.0
 ezdxf==1.3.3
 
 # Image
-Pillow==10.4.0
-numpy==1.26.4
+Pillow>=10.4.0
 
 # Utils
 python-dotenv==1.0.1
