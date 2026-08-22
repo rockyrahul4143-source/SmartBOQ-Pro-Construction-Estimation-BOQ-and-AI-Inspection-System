@@ -1,42 +1,48 @@
 @echo off
 title SmartBOQ Pro
 color 0A
-echo.
-echo  ================================================
-echo   SmartBOQ Pro - Construction Estimation System
-echo  ================================================
 
-set "PYTHON312=C:\Program Files\QGIS 3.44.11\apps\Python312\python.exe"
+set "PYTHON311=C:\Users\acer\AppData\Local\Programs\Python\Python311\python.exe"
 set "BACKEND=%~dp0backend"
 set "FRONTEND=%~dp0frontend"
-set "ML=%~dp0backend\ml_models"
 
-REM ── Kill anything on port 8000 / 5173 ────────────
-echo  Stopping any existing servers...
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8000 " 2^>nul') do taskkill /F /PID %%a >nul 2>&1
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":5173 " 2^>nul') do taskkill /F /PID %%a >nul 2>&1
-timeout /t 2 /nobreak >nul
+echo.
+echo  ================================================
+echo   SmartBOQ Pro
+echo  ================================================
 
-REM ── Check AI models ───────────────────────────────
-if not exist "%ML%\ResNet50_model.h5" (
-    echo  [AI] Models missing - starting training in background...
-    start "SmartBOQ Training" cmd /k "cd /d "%BACKEND%" & "%PYTHON312%" train_fast.py & pause"
-) else (
-    echo  [AI] All 4 AI models found!
+REM Verify Python 3.11
+if not exist "%PYTHON311%" (
+    echo  ERROR: Python 3.11 not found.
+    echo  Download: https://www.python.org/downloads/release/python-3119/
+    pause & exit /b 1
 )
 
-REM ── Setup database (safe - skips if DB exists) ────
-echo  Checking database...
-cd /d "%BACKEND%"
-"%PYTHON312%" setup_local.py
-if errorlevel 1 echo  [INFO] DB already up to date.
+REM Kill old servers
+echo  Stopping old servers...
+for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":8000 "') do taskkill /F /PID %%a >nul 2>&1
+for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":5173 "') do taskkill /F /PID %%a >nul 2>&1
+timeout /t 2 /nobreak >nul
 
-REM ── Start backend (with auto-restart wrapper) ─────
+REM Smart DB init — only runs if smartboq.db does NOT exist
+cd /d "%BACKEND%"
+if not exist "smartboq.db" (
+    echo  First run — initialising database...
+    "%PYTHON311%" -c "import sys,os; sys.path.insert(0,'.'); os.environ['DATABASE_URL']='sqlite:///./smartboq.db'; os.environ['SECRET_KEY']='local-dev-secret-key-smartboq-pro-2024'; os.environ['ALLOWED_ORIGINS']='*'; [sys.path.insert(0,p) for p in ['C:\\Users\\acer\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages'] if p not in sys.path]; from app.db.base import Base,engine; import app.models; Base.metadata.create_all(bind=engine); from app.scripts.seed_data import run; run(); print('DB ready!')"
+    if errorlevel 1 (
+        echo  DB init failed. Check Python 3.11 installation.
+        pause & exit /b 1
+    )
+) else (
+    echo  [OK] Database exists — skipping init (your data is safe)
+)
+
+REM Start backend with auto-restart
 echo  Starting backend on port 8000...
-start "SmartBOQ Backend" cmd /k "cd /d "%BACKEND%" & :loop & "%PYTHON312%" start_local_py312.py & echo Backend stopped - restarting in 3s... & timeout /t 3 /nobreak & goto loop"
+start "SmartBOQ Backend" cmd /k "cd /d "%BACKEND%" & :loop & "%PYTHON311%" start_py311.py & echo Backend stopped, restarting in 5s... & timeout /t 5 /nobreak ^>nul & goto loop"
 timeout /t 8 /nobreak >nul
 
-REM ── Start frontend ────────────────────────────────
+REM Start frontend
 echo  Starting frontend on port 5173...
 cd /d "%FRONTEND%"
 if not exist "node_modules" (
@@ -50,12 +56,12 @@ echo.
 echo  ================================================
 echo   App:      http://localhost:5173
 echo   API Docs: http://localhost:8000/docs
-echo   Email:    admin@smartboq.com
-echo   Password: Admin@1234
-echo  ================================================
+echo   ------------------------------------------------
+echo   Admin:    admin@smartboq.com / Admin@1234
+echo   ================================================
 echo.
 start "" "http://localhost:5173"
 echo  [Press any key to stop all servers]
 pause >nul
 taskkill /F /FI "WindowTitle eq SmartBOQ*" >nul 2>&1
-echo  All servers stopped.
+echo  Stopped.

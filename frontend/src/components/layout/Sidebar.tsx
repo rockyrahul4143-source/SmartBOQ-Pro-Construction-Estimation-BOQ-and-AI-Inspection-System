@@ -3,30 +3,38 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import {
   LayoutDashboard, FolderOpen, Building2, Calculator, Package,
-  FileText, BarChart3, Upload, Eye, Settings, LogOut, HardHat, UserCircle,
+  FileText, BarChart3, Upload, Eye, Settings, LogOut, HardHat,
+  UserCircle, BookOpen, Ruler, TrendingUp, Receipt,
 } from 'lucide-react'
 
 const navItems = [
-  { to: '/dashboard',    icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/projects',     icon: FolderOpen,       label: 'Projects' },
-  { to: '/buildings',    icon: Building2,         label: 'Buildings' },
-  { to: '/estimation',   icon: Calculator,        label: 'Estimation' },
-  { to: '/materials',    icon: Package,           label: 'Materials' },
-  { to: '/boq',          icon: FileText,          label: 'BOQ' },
-  { to: '/analytics',    icon: BarChart3,         label: 'Analytics' },
-  { to: '/dxf',          icon: Upload,            label: 'DXF Import' },
-  { to: '/inspection',   icon: Eye,               label: 'AI Inspection' },
+  { to: '/dashboard',      icon: LayoutDashboard, label: 'Dashboard',        group: 'main' },
+  { to: '/projects',       icon: FolderOpen,      label: 'Projects',          group: 'main' },
+  { to: '/buildings',      icon: Building2,       label: 'Buildings',         group: 'main' },
+  { to: '/estimation',     icon: Calculator,      label: 'Estimation',        group: 'main' },
+  // ── Civil Engineering ──────────────────────────────────────────
+  { to: '/sor',            icon: BookOpen,        label: 'Item Master / SOR', group: 'civil' },
+  { to: '/measurements',   icon: Ruler,           label: 'Measurement Book',  group: 'civil' },
+  { to: '/boq',            icon: FileText,        label: 'BOQ',               group: 'civil' },
+  { to: '/rate-analysis',  icon: TrendingUp,      label: 'Rate Analysis',     group: 'civil' },
+  { to: '/billing',        icon: Receipt,         label: 'RA Billing',        group: 'civil' },
+  // ── Other ─────────────────────────────────────────────────────
+  { to: '/materials',      icon: Package,         label: 'Materials',         group: 'other' },
+  { to: '/analytics',      icon: BarChart3,       label: 'Analytics',         group: 'other' },
+  { to: '/dxf',            icon: Upload,          label: 'DXF Import',        group: 'other' },
+  { to: '/drawing-takeoff',icon: Ruler,            label: 'Drawing Takeoff',   group: 'other' },
+  { to: '/inspection',     icon: Eye,             label: 'AI Inspection',     group: 'other' },
 ]
 
-const bottomItems = [
-  { to: '/profile',      icon: UserCircle,        label: 'My Profile' },
-]
+const GROUP_LABELS: Record<string,string> = { main:'', civil:'CIVIL ENGINEERING', other:'OTHER' }
 
 interface SidebarProps { collapsed: boolean }
 
 export default function Sidebar({ collapsed }: SidebarProps) {
   const { user, logout } = useAuth()
-  const loc = useLocation()
+
+  const groups = ['main','civil','other'] as const
+  const byGroup = (g: string) => navItems.filter(n => n.group === g)
 
   return (
     <aside className={cn(
@@ -34,58 +42,41 @@ export default function Sidebar({ collapsed }: SidebarProps) {
       collapsed ? 'w-16' : 'w-64'
     )}>
       {/* Logo */}
-      <div className="flex h-16 items-center gap-3 px-4 border-b border-white/10">
+      <div className="flex h-16 items-center gap-3 px-4 border-b border-white/10 shrink-0">
         <HardHat className="h-7 w-7 shrink-0 text-amber-400" />
         {!collapsed && (
           <div>
             <p className="font-bold text-sm leading-tight">SmartBOQ</p>
-            <p className="text-xs text-white/60">Pro</p>
+            <p className="text-xs text-white/60">Civil Engineering Suite</p>
           </div>
         )}
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-4 space-y-1 px-2">
-        {navItems.map(({ to, icon: Icon, label }) => (
-          <NavLink
-            key={to}
-            to={to}
-            className={({ isActive }) => cn(
-              'flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors',
-              isActive
-                ? 'bg-white/20 text-white'
-                : 'text-white/70 hover:bg-white/10 hover:text-white'
+      <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
+        {groups.map(g => (
+          <div key={g}>
+            {!collapsed && GROUP_LABELS[g] && (
+              <p className="text-xs font-semibold text-white/40 uppercase tracking-wider px-3 pt-4 pb-1">{GROUP_LABELS[g]}</p>
             )}
-          >
-            <Icon className="h-5 w-5 shrink-0" />
-            {!collapsed && <span>{label}</span>}
-          </NavLink>
-        ))}
-
-        {user?.role === 'admin' && (
-          <>
-            <div className={cn('mt-4 mb-2 border-t border-white/10 pt-4', collapsed && 'mx-2')} />
-            {bottomItems.map(({ to, icon: Icon, label }) => (
-              <NavLink
-                key={to}
-                to={to}
+            {byGroup(g).map(({ to, icon: Icon, label }) => (
+              <NavLink key={to} to={to}
                 className={({ isActive }) => cn(
                   'flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors',
                   isActive ? 'bg-white/20 text-white' : 'text-white/70 hover:bg-white/10 hover:text-white'
                 )}
               >
-                <Icon className="h-5 w-5 shrink-0" />
+                <Icon className="h-4 w-4 shrink-0" />
                 {!collapsed && <span>{label}</span>}
               </NavLink>
             ))}
-          </>
-        )}
+          </div>
+        ))}
       </nav>
 
-      {/* User */}
-      <div className="border-t border-white/10 p-3">
-        <NavLink
-          to="/profile"
+      {/* User + Logout */}
+      <div className="border-t border-white/10 p-3 shrink-0">
+        <NavLink to="/profile"
           className={({ isActive }) => cn(
             'flex items-center gap-3 rounded-md px-3 py-2 mb-1 text-sm transition-colors',
             isActive ? 'bg-white/20 text-white' : 'text-white/70 hover:bg-white/10 hover:text-white'
@@ -97,12 +88,11 @@ export default function Sidebar({ collapsed }: SidebarProps) {
           {!collapsed && (
             <div className="min-w-0">
               <p className="text-sm font-medium truncate leading-tight">{user?.full_name}</p>
-              <p className="text-xs text-white/50 capitalize leading-tight">{user?.role?.replace(/_/g, ' ')}</p>
+              <p className="text-xs text-white/50 capitalize leading-tight">{user?.role?.replace(/_/g,' ')}</p>
             </div>
           )}
         </NavLink>
-        <button
-          onClick={logout}
+        <button onClick={logout}
           className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-white/70 hover:bg-white/10 hover:text-white transition-colors"
         >
           <LogOut className="h-4 w-4 shrink-0" />

@@ -41,7 +41,7 @@ function BOQTable({ boq, onRefresh }: { boq: any; onRefresh: () => void }) {
       <table className="w-full text-sm border-collapse">
         <thead className="bg-[hsl(var(--primary))] text-white">
           <tr>
-            {['Item No', 'Description', 'Unit', 'Quantity', 'Rate (PKR)', 'Amount (PKR)', ''].map(h => (
+            {['Item No', 'Description', 'Unit', 'Quantity', 'Rate (INR)', 'Amount (INR)', ''].map(h => (
               <th key={h} className="px-3 py-3 text-left text-xs font-medium whitespace-nowrap">{h}</th>
             ))}
           </tr>

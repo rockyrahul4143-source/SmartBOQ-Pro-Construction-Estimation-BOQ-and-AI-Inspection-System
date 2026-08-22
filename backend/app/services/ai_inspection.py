@@ -1,31 +1,19 @@
 """
 AI Visual Inspection Service
-==============================
-Wired to YOUR trained models from the notebooks:
+================================
+Models (consistent cache keys used everywhere):
+  resnet50_crack    -> ResNet50_model.h5    (120x120)
+  vgg16_crack       -> VGG16_model.h5       (120x120)
+  inceptionv3_crack -> InceptionV3_model.h5 (150x150)
+  mobilenetv2_road  -> crack_model.h5       (160x160)
 
-Notebook 1 (1 .ipynb) — Surface Crack Detection
-  - ResNet50_model.h5   → image size (120,120), binary sigmoid
-  - VGG16_model.h5      → image size (120,120), binary sigmoid
-  - InceptionV3_model.h5 → image size (150,150), binary sigmoid
-  Classes: 0=Negative (no crack), 1=Positive (crack)
-  Prediction: model.predict(img) > 0.5 → int
-
-Notebook 2 (2.ipynb) — Pothole/Road Damage Detection
-  - crack_model.h5 → MobileNetV2, image size (160,160), binary sigmoid
-  Classes: 0=NEGATIVE (clean road), 1=POSITIVE (pothole)
-  Prediction: model.predict(img) > 0.5 → int
-
-All .h5 files must be placed in: backend/ml_models/
+Currency: INR (Indian Rupees)
+Repair costs: dynamic — based on actual confidence score, no hard limits
 """
 from __future__ import annotations
-import os
-import io
-import json
-import logging
-import hashlib
+import os, io, hashlib, logging
 from pathlib import Path
 from typing import Optional
-
 import numpy as np
 from PIL import Image
 
@@ -34,217 +22,240 @@ logger = logging.getLogger(__name__)
 ML_DIR = Path(__file__).parent.parent.parent / "ml_models"
 ML_DIR.mkdir(exist_ok=True)
 
-# ── Lazy model cache ──────────────────────────────────
+# ── Model cache ───────────────────────────────────────
 _models: dict = {}
+TF_AVAILABLE: bool = False
+
+
+# ── Load one Keras model ──────────────────────────────
+def _load_model(key: str, h5_path: Path):
+    global TF_AVAILABLE
+    if key in _models:
+        return _models[key]
+    if not h5_path.exists():
+        logger.warning(f"Not found: {h5_path}")
+        return None
+    try:
+        import tensorflow as tf
+        TF_AVAILABLE = True
+        model = tf.keras.models.load_model(str(h5_path))
+        _models[key] = model
+        logger.info(f"Loaded [{key}] from {h5_path.name}")
+        return model
+    except Exception as e:
+        logger.error(f"Failed [{key}]: {e}")
+        return None
+
+
+# ── Startup preload ───────────────────────────────────
+def preload_all_models() -> None:
+    global TF_AVAILABLE
+    try:
+        import tensorflow as tf
+        TF_AVAILABLE = True
+        logger.info(f"TensorFlow {tf.__version__} ready")
+    except ImportError:
+        logger.warning("TensorFlow not available")
+        return
+    specs = [
+        ("resnet50_crack",    ML_DIR / "ResNet50_model.h5"),
+        ("vgg16_crack",       ML_DIR / "VGG16_model.h5"),
+        ("inceptionv3_crack", ML_DIR / "InceptionV3_model.h5"),
+        ("mobilenetv2_road",  ML_DIR / "crack_model.h5"),
+    ]
+    for key, path in specs:
+        _load_model(key, path)
+    logger.info(f"Preloaded {len(_models)}/4 models")
 
 
 # ── Image preprocessing ───────────────────────────────
 def _preprocess(image_bytes: bytes, size: tuple) -> np.ndarray:
-    """Load image bytes → resize → normalize → add batch dim."""
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB").resize(size)
     arr = np.array(img, dtype=np.float32) / 255.0
-    return np.expand_dims(arr, axis=0)  # (1, H, W, 3)
-
-
-# ── Load Keras model (lazy, cached) ───────────────────
-def _load_model(name: str, h5_path: Path):
-    if name in _models:
-        return _models[name]
-    if not h5_path.exists():
-        logger.warning(f"Model weights not found: {h5_path}")
-        return None
-    try:
-        import tensorflow as tf
-        model = tf.keras.models.load_model(str(h5_path))
-        _models[name] = model
-        logger.info(f"Loaded model: {name} from {h5_path.name}")
-        return model
-    except Exception as e:
-        logger.error(f"Failed to load {name}: {e}")
-        return None
+    return np.expand_dims(arr, axis=0)
 
 
 # ── Severity from probability ─────────────────────────
-def _severity(prob: float, detected: bool) -> tuple[str, float]:
-    """Map detection probability to severity level."""
+def _severity(prob: float, detected: bool):
     if not detected:
         return "none", 0.0
-    score = prob * 100
-    if score < 60:  return "low",      score
-    if score < 75:  return "moderate", score
-    if score < 90:  return "high",     score
-    return "critical", score
+    s = prob * 100
+    if s < 60:  return "low",      s
+    if s < 75:  return "moderate", s
+    if s < 90:  return "high",     s
+    return "critical", s
 
 
-# ── Repair cost estimates (PKR) ───────────────────────
-REPAIR_COSTS = {
+# ── Dynamic repair cost (INR) — scales with confidence ─
+# No fixed limits. Cost reflects actual damage probability.
+# Sources: CPWD DSR 2024, MoRTH schedule, Delhi PWD 2024
+def _repair_cost_inr(itype: str, confidence: float, detected: bool):
+    if not detected or confidence < 0.5:
+        return 0, 0
+
+    s = confidence * 100  # percentage
+
+    if itype in ("concrete_crack", "surface_crack"):
+        # Epoxy injection ₹200-800/m, polymer mortar ₹1200/m², structural ₹2500/m²
+        if s < 55:   return 1_000,    6_000       # very early hairline
+        elif s < 60: return 3_000,    12_000      # hairline crack — sealant
+        elif s < 65: return 6_000,    20_000      # fine crack — epoxy primer
+        elif s < 70: return 10_000,   35_000      # visible crack — epoxy injection
+        elif s < 75: return 18_000,   55_000      # moderate — polymer mortar
+        elif s < 80: return 30_000,   90_000      # structural crack — repair mortar
+        elif s < 85: return 50_000,   1_50_000    # serious — engineer + repair
+        elif s < 90: return 80_000,   2_50_000    # major — structural work
+        elif s < 95: return 1_50_000, 4_50_000    # critical — full intervention
+        else:        return 2_50_000, 10_00_000   # severe — rebuild section
+
+    elif itype == "road_damage":
+        # Cold mix ₹180/m², hot mix ₹350/m², milling+resurfacing ₹800/m²
+        if s < 55:   return 1_500,    8_000
+        elif s < 60: return 4_000,    15_000      # minor surface wear
+        elif s < 65: return 8_000,    28_000      # early pothole — cold mix
+        elif s < 70: return 15_000,   50_000      # pothole — hot mix patch
+        elif s < 75: return 30_000,   90_000      # multiple potholes
+        elif s < 80: return 60_000,   2_00_000    # large pothole area
+        elif s < 85: return 1_00_000, 3_50_000    # extensive damage
+        elif s < 90: return 1_80_000, 6_00_000    # milling required
+        elif s < 95: return 3_00_000, 10_00_000   # resurfacing needed
+        else:        return 5_00_000, 20_00_000   # full reconstruction
+
+    else:
+        # Building safety — general
+        if s < 60:   return 5_000,   25_000
+        elif s < 75: return 25_000,  1_00_000
+        elif s < 90: return 1_00_000, 4_00_000
+        else:        return 4_00_000, 15_00_000
+
+
+# ── Recommendations ───────────────────────────────────
+_RECS = {
     "concrete_crack": {
-        "none":     (0, 0),
-        "low":      (5_000, 15_000),
-        "moderate": (20_000, 60_000),
-        "high":     (80_000, 200_000),
-        "critical": (250_000, 800_000),
+        "low":      ("Hairline cracks detected. Apply epoxy sealant or crack filler. Monitor monthly.", "soon"),
+        "moderate": ("Visible cracks found. Epoxy injection recommended. Structural assessment advised.", "soon"),
+        "high":     ("Significant structural cracks. Immediate engineer inspection required. Apply polymer mortar.", "immediate"),
+        "critical": ("CRITICAL: Major structural failure risk. Stop use. Emergency structural intervention required.", "immediate"),
     },
     "road_damage": {
-        "none":     (0, 0),
-        "low":      (10_000, 30_000),
-        "moderate": (50_000, 150_000),
-        "high":     (200_000, 600_000),
-        "critical": (700_000, 2_000_000),
+        "low":      ("Minor surface wear. Cold mix patching recommended. Schedule in routine maintenance.", "soon"),
+        "moderate": ("Pothole detected. Hot mix patching required. Mark for traffic safety.", "soon"),
+        "high":     ("Severe potholes. Immediate hot mix patching. Risk of vehicle damage and accidents.", "immediate"),
+        "critical": ("Dangerous road condition. Close section immediately. Full milling and resurfacing required.", "immediate"),
     },
 }
 
-
-def _recommendation(inspection_type: str, severity: str, detected: bool) -> tuple[str, str]:
-    """Returns (recommendation_text, urgency)."""
+def _recommendation(itype: str, severity: str, detected: bool):
     if not detected or severity == "none":
-        return "No defects detected. Schedule routine inspection in 6 months.", "monitor"
-
-    recs = {
-        "concrete_crack": {
-            "low":      ("Hairline cracks detected. Apply epoxy injection or crack sealant. Monitor for growth.", "soon"),
-            "moderate": ("Structural engineer assessment required. Apply polymer-modified mortar repair.", "soon"),
-            "high":     ("Significant cracking found. Immediate structural engineer inspection required.", "immediate"),
-            "critical": ("CRITICAL: Stop use. Immediate structural intervention required.", "immediate"),
-        },
-        "road_damage": {
-            "low":      ("Minor road surface damage. Apply cold mix patching. Mark for scheduled maintenance.", "soon"),
-            "moderate": ("Pothole detected. Hot mix patching required. Mark for traffic safety.", "soon"),
-            "high":     ("Severe pothole. Immediate patching required to prevent vehicle damage.", "immediate"),
-            "critical": ("Dangerous road condition. Close road immediately. Full resurfacing required.", "immediate"),
-        },
-    }
-    type_recs = recs.get(inspection_type, {})
-    rec_text, urgency = type_recs.get(severity, ("Defect detected. Professional assessment required.", "soon"))
-    return rec_text, urgency
+        return "No defects detected. Routine inspection recommended in 6 months.", "monitor"
+    text, urgency = _RECS.get(itype, {}).get(
+        severity, ("Defect detected. Professional assessment required.", "soon")
+    )
+    return text, urgency
 
 
-# ── Not loaded response ───────────────────────────────
-def _not_loaded(inspection_type: str, model_filename: str, classes: list) -> dict:
+# ── Not-loaded fallback ───────────────────────────────
+def _not_loaded(itype: str, filename: str, classes: list) -> dict:
     return {
-        "inspection_type": inspection_type,
-        "model_name": "NOT LOADED",
-        "status": "model_weights_not_found",
-        "message": (
-            f"Place '{model_filename}' in backend/ml_models/. "
-            f"Train from notebook and save with: model.save('{model_filename}')"
-        ),
-        "classes": classes,
-        "mock_prediction": {
-            "note": "Placeholder — load model weights for real predictions.",
-            "predicted_class": classes[0],
-            "confidence": 0.0,
-            "severity": "unknown",
-        },
+        "inspection_type": itype,
+        "model_name":      "NOT LOADED",
+        "status":          "model_weights_not_found",
+        "message":         f"Place '{filename}' in backend/ml_models/ to enable AI inspection.",
+        "classes":         classes,
+        "severity":        "none",
+        "severity_score":  0.0,
+        "confidence":      0.0,
+        "mock_prediction": {"predicted_class": classes[0], "confidence": 0.0},
     }
 
 
 # ══════════════════════════════════════════════════════
-# PUBLIC API — one function per inspection type
+# PUBLIC INSPECTION FUNCTIONS
 # ══════════════════════════════════════════════════════
 
 def inspect_concrete_crack(image_bytes: bytes) -> dict:
-    """
-    Notebook 1: Surface Crack Detection.
-    Ensemble vote from ResNet50 + VGG16 + InceptionV3.
-    Falls back to single available model if others missing.
-    """
-    # Model specs from notebook 1: exact sizes used during training
-    model_specs = [
+    """Ensemble: ResNet50 + VGG16 + InceptionV3."""
+    specs = [
         ("resnet50_crack",    ML_DIR / "ResNet50_model.h5",    (120, 120)),
         ("vgg16_crack",       ML_DIR / "VGG16_model.h5",       (120, 120)),
         ("inceptionv3_crack", ML_DIR / "InceptionV3_model.h5", (150, 150)),
     ]
+    preds, names = [], []
+    for key, path, size in specs:
+        m = _load_model(key, path)
+        if m:
+            prob = float(m.predict(_preprocess(image_bytes, size), verbose=0)[0][0])
+            preds.append(prob)
+            names.append(key.split("_")[0].upper())
 
-    predictions = []
-    loaded_names = []
-
-    for name, path, size in model_specs:
-        model = _load_model(name, path)
-        if model:
-            arr  = _preprocess(image_bytes, size)
-            prob = float(model.predict(arr, verbose=0)[0][0])
-            predictions.append(prob)
-            loaded_names.append(name.replace("_crack", "").upper())
-
-    if not predictions:
+    if not preds:
         return _not_loaded("concrete_crack",
                            "ResNet50_model.h5 / VGG16_model.h5 / InceptionV3_model.h5",
                            ["No Crack", "Crack Detected"])
 
-    # Soft voting ensemble: average probability
-    avg_prob = float(np.mean(predictions))
-    detected = avg_prob > 0.5
-    severity, score = _severity(avg_prob, detected)
-    rec, urgency    = _recommendation("concrete_crack", severity, detected)
-    c_min, c_max    = REPAIR_COSTS["concrete_crack"].get(severity, (0, 0))
+    avg  = float(np.mean(preds))
+    det  = avg > 0.5
+    sev, score = _severity(avg, det)
+    rec, urg   = _recommendation("concrete_crack", sev, det)
+    cmin, cmax = _repair_cost_inr("concrete_crack", avg, det)
 
     return {
-        "inspection_type":   "concrete_crack",
-        "model_name":        f"Ensemble ({', '.join(loaded_names)})" if len(loaded_names) > 1 else loaded_names[0],
-        "predicted_class":   "Crack Detected" if detected else "No Crack",
-        "confidence":        round(avg_prob, 4),
-        "severity":          severity,
-        "severity_score":    round(score, 1),
-        "recommendation":    rec,
-        "repair_urgency":    urgency,
-        "estimated_repair_cost_min": c_min,
-        "estimated_repair_cost_max": c_max,
+        "inspection_type":            "concrete_crack",
+        "model_name":                 f"Ensemble ({', '.join(names)})",
+        "predicted_class":            "Crack Detected" if det else "No Crack",
+        "confidence":                 round(avg, 4),
+        "severity":                   sev,
+        "severity_score":             round(score, 1),
+        "recommendation":             rec,
+        "repair_urgency":             urg,
+        "estimated_repair_cost_min":  cmin,
+        "estimated_repair_cost_max":  cmax,
+        "currency":                   "INR",
         "class_probabilities": {
-            "No Crack":       round(1 - avg_prob, 4),
-            "Crack Detected": round(avg_prob, 4),
+            "No Crack":       round(1 - avg, 4),
+            "Crack Detected": round(avg, 4),
         },
-        "ensemble_models_used": loaded_names,
-        "individual_predictions": [round(p, 4) for p in predictions],
+        "individual_predictions": [round(p, 4) for p in preds],
     }
 
 
 def inspect_surface_crack_ensemble(image_bytes: bytes) -> dict:
-    """
-    Same ensemble as concrete crack — reuse.
-    """
-    result = inspect_concrete_crack(image_bytes)
-    result["inspection_type"] = "surface_crack"
-    return result
+    """Same ensemble as concrete crack."""
+    r = inspect_concrete_crack(image_bytes)
+    r["inspection_type"] = "surface_crack"
+    return r
 
 
 def inspect_road_damage(image_bytes: bytes) -> dict:
-    """
-    Notebook 2: Pothole detection — MobileNetV2.
-    Model file: crack_model.h5
-    Image size: 160×160
-    Classes: 0=NEGATIVE (clean road), 1=POSITIVE (pothole)
-    """
-    model = _load_model("road_damage_mobilenet", ML_DIR / "crack_model.h5")
-
-    if model is None:
+    """MobileNetV2 pothole detector — crack_model.h5."""
+    m = _load_model("mobilenetv2_road", ML_DIR / "crack_model.h5")
+    if m is None:
         return _not_loaded("road_damage", "crack_model.h5",
                            ["NEGATIVE (Clean Road)", "POSITIVE (Pothole)"])
 
-    arr  = _preprocess(image_bytes, (160, 160))
-    prob = float(model.predict(arr, verbose=0)[0][0])
-    detected = prob > 0.5
-    severity, score = _severity(prob, detected)
-    # Potholes are always at least moderate severity
-    if detected and severity == "low":
-        severity = "moderate"
-    rec, urgency = _recommendation("road_damage", severity, detected)
-    c_min, c_max = REPAIR_COSTS["road_damage"].get(severity, (0, 0))
+    prob = float(m.predict(_preprocess(image_bytes, (160, 160)), verbose=0)[0][0])
+    det  = prob > 0.5
+    sev, score = _severity(prob, det)
+    if det and sev == "low":
+        sev = "moderate"  # potholes always at least moderate
+    rec, urg   = _recommendation("road_damage", sev, det)
+    cmin, cmax = _repair_cost_inr("road_damage", prob, det)
 
     return {
-        "inspection_type":   "road_damage",
-        "model_name":        "MobileNetV2 Pothole Detector",
-        "predicted_class":   "POSITIVE (Pothole)" if detected else "NEGATIVE (Clean Road)",
-        "confidence":        round(prob, 4),
-        "severity":          severity,
-        "severity_score":    round(score, 1),
-        "detections":        [{"class": "pothole", "confidence": round(prob, 4), "bbox": []}] if detected else [],
-        "total_defects":     1 if detected else 0,
-        "worst_defect":      "pothole" if detected else "none",
-        "recommendation":    rec,
-        "repair_urgency":    urgency,
-        "estimated_repair_cost_min": c_min,
-        "estimated_repair_cost_max": c_max,
+        "inspection_type":            "road_damage",
+        "model_name":                 "MobileNetV2 (crack_model.h5)",
+        "predicted_class":            "POSITIVE (Pothole)" if det else "NEGATIVE (Clean Road)",
+        "confidence":                 round(prob, 4),
+        "severity":                   sev,
+        "severity_score":             round(score, 1),
+        "detections":                 [{"class": "pothole", "confidence": round(prob, 4)}] if det else [],
+        "total_defects":              1 if det else 0,
+        "worst_defect":               "pothole" if det else "none",
+        "recommendation":             rec,
+        "repair_urgency":             urg,
+        "estimated_repair_cost_min":  cmin,
+        "estimated_repair_cost_max":  cmax,
+        "currency":                   "INR",
         "class_probabilities": {
             "NEGATIVE (Clean Road)": round(1 - prob, 4),
             "POSITIVE (Pothole)":    round(prob, 4),
@@ -253,26 +264,20 @@ def inspect_road_damage(image_bytes: bytes) -> dict:
 
 
 def inspect_building_safety(image_bytes: bytes) -> dict:
-    """
-    Building safety — not yet trained.
-    Returns a clear message directing the user to train the model.
-    """
+    """EfficientNetB7 — not yet trained."""
     return _not_loaded(
-        "building_safety",
-        "efficientnetb7_safety.h5",
+        "building_safety", "efficientnetb7_safety.h5",
         ["Safe", "Minor Damage", "Moderate Damage", "Severe Damage"],
     )
 
 
-# ── Save inspection image to disk ────────────────────
-def save_inspection_image(image_bytes: bytes, inspection_type: str,
+# ── Save uploaded image ───────────────────────────────
+def save_inspection_image(image_bytes: bytes, itype: str,
                           filename: str, upload_dir: str) -> str:
-    """Save uploaded image and return the saved file path."""
     save_dir = os.path.join(upload_dir, "inspections")
     os.makedirs(save_dir, exist_ok=True)
-    img_hash = hashlib.md5(image_bytes).hexdigest()[:8]
-    save_name = f"{inspection_type}_{img_hash}_{filename}"
-    save_path = os.path.join(save_dir, save_name)
-    with open(save_path, "wb") as f:
+    h = hashlib.md5(image_bytes).hexdigest()[:8]
+    path = os.path.join(save_dir, f"{itype}_{h}_{filename}")
+    with open(path, "wb") as f:
         f.write(image_bytes)
-    return save_path
+    return path

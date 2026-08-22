@@ -214,11 +214,11 @@ def model_status(_: User = Depends(get_current_active_user)):
     from app.services.ai_inspection import _models, ML_DIR
 
     model_files = {
-        "concrete_crack_resnet50":    "ResNet50_model.h5",
-        "concrete_crack_vgg16":       "VGG16_model.h5",
-        "concrete_crack_inceptionv3": "InceptionV3_model.h5",
-        "road_damage_mobilenet":      "crack_model.h5",
-        "building_safety":            "efficientnetb7_safety.h5",
+        "resnet50_crack":    "ResNet50_model.h5",
+        "vgg16_crack":       "VGG16_model.h5",
+        "inceptionv3_crack": "InceptionV3_model.h5",
+        "mobilenetv2_road":  "crack_model.h5",
+        "building_safety":   "efficientnetb7_safety.h5",
     }
 
     status_map = {}
@@ -238,11 +238,8 @@ def model_status(_: User = Depends(get_current_active_user)):
 
 
 def _check_tf() -> bool:
-    try:
-        import tensorflow
-        return True
-    except ImportError:
-        return False
+    from app.services.ai_inspection import TF_AVAILABLE
+    return TF_AVAILABLE
 
 
 # ── History ───────────────────────────────────────────

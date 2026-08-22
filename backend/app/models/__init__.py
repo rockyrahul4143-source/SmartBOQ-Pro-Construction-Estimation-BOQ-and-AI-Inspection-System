@@ -7,6 +7,10 @@ from app.models.estimate import Estimate, WorkType
 from app.models.boq import BOQ, BOQItem, BOQStatus
 from app.models.report import Report, ReportType, ReportFormat, AuditLog
 from app.models.inspection import Inspection, InspectionType, SeverityLevel
+from app.models.sor import SORItem, WorkCategory, RateSource
+from app.models.measurement import MeasurementBook, MeasurementItem
+from app.models.rate_analysis import RateAnalysis, RateComponent
+from app.models.billing import RABill, RABillItem, BillStatus
 
 __all__ = [
     "User", "UserRole",
@@ -17,4 +21,8 @@ __all__ = [
     "BOQ", "BOQItem", "BOQStatus",
     "Report", "ReportType", "ReportFormat", "AuditLog",
     "Inspection", "InspectionType", "SeverityLevel",
+    "SORItem", "WorkCategory", "RateSource",
+    "MeasurementBook", "MeasurementItem",
+    "RateAnalysis", "RateComponent",
+    "RABill", "RABillItem", "BillStatus",
 ]

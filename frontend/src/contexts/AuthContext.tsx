@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import React, { createContext, useState, useEffect, useCallback } from 'react'
 import api from '@/lib/api'
 
 export interface User {
@@ -12,19 +12,19 @@ export interface User {
   is_active: boolean
 }
 
-interface AuthState {
+export interface AuthState {
   user: User | null
   isLoading: boolean
   isAuthenticated: boolean
 }
 
-interface AuthContextType extends AuthState {
+export interface AuthContextType extends AuthState {
   login: (email: string, password: string) => Promise<void>
   logout: () => void
   updateUser: (u: User) => void
 }
 
-const AuthContext = createContext<AuthContextType | null>(null)
+export const AuthContext = createContext<AuthContextType | null>(null)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>({
@@ -36,12 +36,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const token = localStorage.getItem('access_token')
     if (token) {
-      // Try to restore existing session
       api.get('/auth/me')
         .then(({ data }) => setState({ user: data, isLoading: false, isAuthenticated: true }))
         .catch(() => autoLogin())
     } else {
-      // No token — auto login as admin for local dev
       autoLogin()
     }
   }, [])
@@ -54,7 +52,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setState({ user: data.user, isLoading: false, isAuthenticated: true })
       })
       .catch(() => {
-        // Backend not ready yet — show login page
         setState({ user: null, isLoading: false, isAuthenticated: false })
       })
   }
@@ -82,13 +79,5 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   )
 }
 
-export function useAuth() {
-  const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error('useAuth must be inside AuthProvider')
-  return ctx
-}
-
-export function useIsAdmin() {
-  const { user } = useAuth()
-  return user?.role === 'admin'
-}
+// Re-export hooks so existing imports from '@/contexts/AuthContext' keep working
+export { useAuth, useIsAdmin } from '@/hooks/useAuth'

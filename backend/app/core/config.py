@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     EMAILS_FROM_NAME: str = "SmartBOQ Pro"
 
     # File Uploads
-    UPLOAD_DIR: str = "./uploads"
+    UPLOAD_DIR: str = "/tmp/uploads"
     MAX_FILE_SIZE_MB: int = 50
 
     model_config = {"env_file": ".env", "case_sensitive": True, "extra": "ignore"}

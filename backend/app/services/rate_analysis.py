@@ -73,27 +73,31 @@ def analyse_rate(payload: RateAnalysisInput) -> RateAnalysisResult:
     )
 
 
-# ── Standard rate schedules (INR, 2024) ──────────────────────────────────────
-# These are seeded into the DB but also usable programmatically for quick quotes.
+# ── Standard rate schedules (INR, India 2024) ────────────────────────────────
+# Sources: CPWD DSR 2024, NBO India, state PWD schedules
 STANDARD_LABOUR_RATES = {
-    "mason":          2000,   # INR/day
-    "helper":         1000,
-    "carpenter":      2200,
-    "steel_fixer":    2500,
-    "painter":        1800,
-    "plumber":        2200,
-    "electrician":    2500,
-    "excavation_daily": 900,
+    "mason":              800,    # INR/day (Class I Mason)
+    "helper":             500,    # INR/day (Unskilled Labour)
+    "carpenter":          900,    # INR/day
+    "steel_fixer":        950,    # INR/day (Bar Bender / Fixer)
+    "painter":            750,    # INR/day
+    "plumber":            900,    # INR/day
+    "electrician":        950,    # INR/day
+    "tile_fixer":         850,    # INR/day
+    "excavation_daily":   500,    # INR/day (manual excavation)
+    "supervisor":         1200,   # INR/day
 }
 
 STANDARD_EQUIPMENT_RATES = {
-    "mixer_per_day":         3500,
-    "vibrator_per_day":      1500,
-    "scaffolding_per_m2":    120,
-    "shuttering_per_m2":     250,
-    "crane_per_hour":        8000,
-    "excavator_per_hour":   12000,
-    "roller_per_hour":      10000,
+    "concrete_mixer_per_day":    1500,   # INR/day (0.2 m³ mixer)
+    "needle_vibrator_per_day":    800,   # INR/day
+    "scaffolding_per_m2":          60,   # INR/m²/month
+    "shuttering_per_m2":          180,   # INR/m² (steel formwork)
+    "tower_crane_per_hour":      4500,   # INR/hour
+    "excavator_per_hour":        1800,   # INR/hour (0.3 m³ JCB)
+    "road_roller_per_hour":      2000,   # INR/hour
+    "water_tanker_per_trip":      800,   # INR/trip
+    "truck_per_trip":            1200,   # INR/trip (tipper 5T)
 }
 
 

@@ -73,7 +73,7 @@ function MaterialModal({ open, onClose, existing }: { open: boolean; onClose: ()
                 </Select>
               </div>
               <div className="col-span-2 space-y-1">
-                <Label>Current Rate (PKR) *</Label>
+                <Label>Current Rate (INR) *</Label>
                 <Input type="number" step="0.01" {...register('current_rate')} placeholder="1200" />
               </div>
               <div className="space-y-1">
@@ -114,9 +114,9 @@ function RateUpdateModal({ open, onClose, material }: { open: boolean; onClose: 
         <CardHeader><CardTitle>Update Rate — {material.name}</CardTitle></CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit(d => mut.mutate(d))} className="space-y-3">
-            <p className="text-sm text-muted-foreground">Current rate: <strong>PKR {formatNumber(material.current_rate)}</strong> per {material.unit}</p>
+            <p className="text-sm text-muted-foreground">Current rate: <strong>INR {formatNumber(material.current_rate)}</strong> per {material.unit}</p>
             <div className="space-y-1">
-              <Label>New Rate (PKR)</Label>
+              <Label>New Rate (INR)</Label>
               <Input type="number" step="0.01" {...register('new_rate')} placeholder="e.g. 1350" />
             </div>
             <div className="space-y-1">
@@ -178,7 +178,7 @@ export default function MaterialsPage() {
           <table className="w-full text-sm">
             <thead className="bg-muted/50">
               <tr>
-                {['Code','Name','Category','Unit','Current Rate (PKR)','Supplier','Last Updated','Actions'].map(h => (
+                {['Code','Name','Category','Unit','Current Rate (INR)','Supplier','Last Updated','Actions'].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">{h}</th>
                 ))}
               </tr>

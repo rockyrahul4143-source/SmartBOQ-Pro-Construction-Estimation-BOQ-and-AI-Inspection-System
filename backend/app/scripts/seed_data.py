@@ -2,15 +2,13 @@
 Seed Data Script
 ================
 Populates the database with:
-  1. Admin user account
-  2. Complete material database with 2024 PKR rates
-  3. Sample project with building and estimates
+  1. Admin + Demo user accounts
+  2. Complete material database — 2024 India INR market rates
+     (Sources: CPWD DSR 2024, NBO India, market survey)
 
-Run: python -m app.scripts.seed_data
-Or automatically on docker-compose startup via docker-compose.yml command.
+Run via setup_local.py on first launch.
 """
-import sys
-import os
+import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from datetime import datetime
@@ -19,79 +17,280 @@ from app.models.user import User, UserRole
 from app.models.material import Material, MaterialCategory, MaterialUnit
 from app.core.security import hash_password
 
-# ── Material seed data (PKR rates, Pakistan market 2024) ──────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# MATERIAL SEED DATA — 2024 India INR Rates
+# Format: (code, name, category, unit, rate_INR, supplier, contact)
+# Rates based on: CPWD DSR 2024, NBO India, regional market survey
+# ══════════════════════════════════════════════════════════════════════════════
 MATERIALS = [
-    # Cement
-    ("OPC-0001", "Ordinary Portland Cement (OPC 43 Grade)", MaterialCategory.CEMENT,  MaterialUnit.BAG,          900,   "Maple Leaf Cement",    "+92-42-111-627539"),
-    ("OPC-0002", "Ordinary Portland Cement (OPC 53 Grade)", MaterialCategory.CEMENT,  MaterialUnit.BAG,          950,   "DG Khan Cement",       "+92-42-111-111-344"),
-    ("WPC-0003", "White Cement",                            MaterialCategory.CEMENT,  MaterialUnit.BAG,          1800,  "Fecto Cement",         None),
 
-    # Sand
-    ("SND-0001", "Fine Sand (Zone II - Ravi)",              MaterialCategory.SAND,    MaterialUnit.CUBIC_METER,  3500,  "Local Supplier",       None),
-    ("SND-0002", "Coarse Sand (Lawrencepur)",               MaterialCategory.SAND,    MaterialUnit.CUBIC_METER,  4200,  "Local Supplier",       None),
-    ("SND-0003", "Plaster Sand (Sieved Fine)",              MaterialCategory.SAND,    MaterialUnit.CUBIC_METER,  4500,  "Local Supplier",       None),
+    # ── CEMENT ──────────────────────────────────────────────────────────────
+    # OPC 43 Grade bag (50 kg) — Avg India retail 2024
+    ("CEM-001", "OPC 43 Grade Cement (50 kg bag)",
+     MaterialCategory.CEMENT, MaterialUnit.BAG,
+     420, "UltraTech / ACC / Ambuja", "1800-200-1234"),
 
-    # Aggregate
-    ("AGG-0001", "Crushed Stone Aggregate 3/4\"",           MaterialCategory.AGGREGATE, MaterialUnit.CUBIC_METER, 6500, "Attock Cement",       None),
-    ("AGG-0002", "Crushed Stone Aggregate 1/2\"",           MaterialCategory.AGGREGATE, MaterialUnit.CUBIC_METER, 6800, "Local Quarry",        None),
-    ("AGG-0003", "Bajri (Natural Gravel)",                  MaterialCategory.AGGREGATE, MaterialUnit.CUBIC_METER, 5500, "River Supplier",      None),
+    # OPC 53 Grade bag (50 kg)
+    ("CEM-002", "OPC 53 Grade Cement (50 kg bag)",
+     MaterialCategory.CEMENT, MaterialUnit.BAG,
+     440, "UltraTech Cement", "1800-200-1234"),
 
-    # Steel
-    ("STL-0001", "HYSD Deformed Bars 10mm (Grade 60)",     MaterialCategory.STEEL,   MaterialUnit.KG,           230,   "Ittefaq Steel",       "+92-42-35788000"),
-    ("STL-0002", "HYSD Deformed Bars 12mm (Grade 60)",     MaterialCategory.STEEL,   MaterialUnit.KG,           228,   "Ittefaq Steel",       "+92-42-35788000"),
-    ("STL-0003", "HYSD Deformed Bars 16mm (Grade 60)",     MaterialCategory.STEEL,   MaterialUnit.KG,           225,   "Mughal Steel",        "+92-42-35960800"),
-    ("STL-0004", "HYSD Deformed Bars 20mm (Grade 60)",     MaterialCategory.STEEL,   MaterialUnit.KG,           222,   "Mughal Steel",        "+92-42-35960800"),
-    ("STL-0005", "MS Binding Wire 16 Gauge",               MaterialCategory.STEEL,   MaterialUnit.KG,           300,   "Local Supplier",      None),
+    # PPC (Portland Pozzolana Cement)
+    ("CEM-003", "PPC Portland Pozzolana Cement (50 kg)",
+     MaterialCategory.CEMENT, MaterialUnit.BAG,
+     400, "Shree Cement / Wonder Cement", None),
 
-    # Bricks
-    ("BRK-0001", "First Class Brick (9x4.5x3 inch)",       MaterialCategory.BRICK,   MaterialUnit.NUMBER,       18,    "Local Kiln",          None),
-    ("BRK-0002", "Second Class Brick",                     MaterialCategory.BRICK,   MaterialUnit.NUMBER,       14,    "Local Kiln",          None),
-    ("BRK-0003", "Engineering Brick (Blue)",               MaterialCategory.BRICK,   MaterialUnit.NUMBER,       45,    "Imported",            None),
+    # White Cement
+    ("CEM-004", "White Cement (50 kg bag)",
+     MaterialCategory.CEMENT, MaterialUnit.BAG,
+     780, "J K White Cement", None),
 
-    # Blocks
-    ("BLK-0001", "AAC Block 600x200x200mm",                MaterialCategory.BLOCK,   MaterialUnit.NUMBER,       220,   "Bolan Cement",        None),
-    ("BLK-0002", "Hollow Concrete Block 400x200x200mm",    MaterialCategory.BLOCK,   MaterialUnit.NUMBER,       95,    "Local Manufacturer",  None),
-    ("BLK-0003", "Solid Concrete Block 400x200x100mm",     MaterialCategory.BLOCK,   MaterialUnit.NUMBER,       65,    "Local Manufacturer",  None),
+    # ── SAND ────────────────────────────────────────────────────────────────
+    # River sand per cubic metre
+    ("SND-001", "River Sand — Fine (Zone II)",
+     MaterialCategory.SAND, MaterialUnit.CUBIC_METER,
+     1800, "Local Sand Supplier", None),
 
-    # Paint
-    ("PNT-0001", "Weather Coat Exterior Paint (20L)",      MaterialCategory.PAINT,   MaterialUnit.LITER,        650,   "Berger Paints",       "+92-21-111-237437"),
-    ("PNT-0002", "Emulsion Paint Interior (20L)",          MaterialCategory.PAINT,   MaterialUnit.LITER,        480,   "Berger Paints",       "+92-21-111-237437"),
-    ("PNT-0003", "Primer (Water Based, 20L)",              MaterialCategory.PAINT,   MaterialUnit.LITER,        320,   "ICI Paints",          None),
-    ("PNT-0004", "Textured Paint (20L)",                   MaterialCategory.PAINT,   MaterialUnit.LITER,        750,   "Nippon Paint",        None),
+    # M-Sand (Manufactured Sand) per m³
+    ("SND-002", "M-Sand (Manufactured Sand)",
+     MaterialCategory.SAND, MaterialUnit.CUBIC_METER,
+     1400, "Local Quarry / Crusher", None),
 
-    # Tiles
-    ("TIL-0001", "Glazed Floor Tile 600x600mm",            MaterialCategory.TILE,    MaterialUnit.SQUARE_METER, 1800,  "Master Tiles",        "+92-52-3550101"),
-    ("TIL-0002", "Vitrified Floor Tile 600x600mm",         MaterialCategory.TILE,    MaterialUnit.SQUARE_METER, 2200,  "Shabbir Tiles",       None),
-    ("TIL-0003", "Ceramic Wall Tile 300x450mm",            MaterialCategory.TILE,    MaterialUnit.SQUARE_METER, 1400,  "Master Tiles",        "+92-52-3550101"),
-    ("TIL-0004", "Porcelain Tile 800x800mm (Imported)",    MaterialCategory.TILE,    MaterialUnit.SQUARE_METER, 4500,  "Al-Murad Tiles",      None),
-    ("TIL-0005", "Marble Tile (Ziarat White, 30mm thick)", MaterialCategory.TILE,    MaterialUnit.SQUARE_METER, 3200,  "Marble Palace",       None),
+    # Plaster Sand (sieved fine)
+    ("SND-003", "Plaster Sand (Sieved Fine)",
+     MaterialCategory.SAND, MaterialUnit.CUBIC_METER,
+     2000, "Local Supplier", None),
 
-    # Waterproofing
-    ("WPF-0001", "Integral Waterproofing Compound",        MaterialCategory.WATERPROOFING, MaterialUnit.KG,     450,   "Dr. Fixit",           None),
-    ("WPF-0002", "Bituminous Coating (Brush Applied)",     MaterialCategory.WATERPROOFING, MaterialUnit.LITER,  380,   "Conpro Pakistan",     None),
-    ("WPF-0003", "Crystalline Waterproofing Powder",       MaterialCategory.WATERPROOFING, MaterialUnit.KG,     800,   "PENETRON",            None),
+    # ── AGGREGATE ────────────────────────────────────────────────────────────
+    # 20mm Crushed Stone Aggregate per m³
+    ("AGG-001", "Crushed Stone Aggregate 20mm (per m³)",
+     MaterialCategory.AGGREGATE, MaterialUnit.CUBIC_METER,
+     1600, "Local Stone Crusher", None),
 
-    # Wood
-    ("WOD-0001", "Deodar Timber (1st quality, 1 CFT)",     MaterialCategory.WOOD,    MaterialUnit.CUBIC_METER,  95000, "Timber Market",       None),
-    ("WOD-0002", "Kail Timber (2nd quality, 1 CFT)",       MaterialCategory.WOOD,    MaterialUnit.CUBIC_METER,  65000, "Timber Market",       None),
-    ("WOD-0003", "Flush Door (2100x900mm, solid core)",    MaterialCategory.WOOD,    MaterialUnit.NUMBER,       12000, "Shezan Doors",        None),
-    ("WOD-0004", "Panel Door (2100x900mm, hardwood)",      MaterialCategory.WOOD,    MaterialUnit.NUMBER,       18000, "Royal Doors",         None),
+    # 10mm Crushed Stone Aggregate per m³
+    ("AGG-002", "Crushed Stone Aggregate 10mm (per m³)",
+     MaterialCategory.AGGREGATE, MaterialUnit.CUBIC_METER,
+     1700, "Local Stone Crusher", None),
 
-    # Glass
-    ("GLS-0001", "Float Glass 5mm (per m²)",               MaterialCategory.GLASS,   MaterialUnit.SQUARE_METER, 1200, "AGC Glass",            None),
-    ("GLS-0002", "Tempered Glass 10mm (per m²)",           MaterialCategory.GLASS,   MaterialUnit.SQUARE_METER, 3800, "Guardian Glass",       None),
-    ("GLS-0003", "Aluminium Sliding Window (per m²)",      MaterialCategory.GLASS,   MaterialUnit.SQUARE_METER, 5500, "Rehman Windows",       None),
+    # 40mm Aggregate (road base / PCC)
+    ("AGG-003", "Crushed Stone Aggregate 40mm (per m³)",
+     MaterialCategory.AGGREGATE, MaterialUnit.CUBIC_METER,
+     1500, "Local Stone Crusher", None),
 
-    # Electrical
-    ("ELC-0001", "PVC Conduit 20mm (per m)",               MaterialCategory.ELECTRICAL, MaterialUnit.LINEAR_METER, 85,  "Pakistan Cables",    "+92-21-111-262253"),
-    ("ELC-0002", "Electrical Wire 2.5mm² (100m roll)",     MaterialCategory.ELECTRICAL, MaterialUnit.LINEAR_METER, 55,  "Pakistan Cables",    None),
-    ("ELC-0003", "Distribution Board 12-way",              MaterialCategory.ELECTRICAL, MaterialUnit.NUMBER,    12000, "Siemens Pakistan",    None),
+    # ── STEEL / TMT BARS ────────────────────────────────────────────────────
+    # Fe-500 TMT Bar 8mm per kg
+    ("STL-001", "TMT Bar Fe-500 8mm (per kg)",
+     MaterialCategory.STEEL, MaterialUnit.KG,
+     68, "TATA Steel / JSW Steel", "1800-103-8282"),
 
-    # Plumbing
-    ("PLB-0001", "UPVC Pipe 4 inch (per m)",               MaterialCategory.PLUMBING, MaterialUnit.LINEAR_METER, 380, "Wavin Pakistan",      None),
-    ("PLB-0002", "UPVC Pipe 2 inch (per m)",               MaterialCategory.PLUMBING, MaterialUnit.LINEAR_METER, 180, "Wavin Pakistan",      None),
-    ("PLB-0003", "CP Water Tap (standard)",                MaterialCategory.PLUMBING, MaterialUnit.NUMBER,       2500, "Neymar Sanitary",     None),
-    ("PLB-0004", "Closet (EWC, standard quality)",         MaterialCategory.PLUMBING, MaterialUnit.NUMBER,       8500, "Porta Sanitary",      None),
+    # Fe-500 TMT Bar 10mm per kg
+    ("STL-002", "TMT Bar Fe-500 10mm (per kg)",
+     MaterialCategory.STEEL, MaterialUnit.KG,
+     67, "TATA Steel / JSW Steel", "1800-103-8282"),
+
+    # Fe-500 TMT Bar 12mm per kg
+    ("STL-003", "TMT Bar Fe-500 12mm (per kg)",
+     MaterialCategory.STEEL, MaterialUnit.KG,
+     66, "TATA Steel / Sail Steel", None),
+
+    # Fe-500 TMT Bar 16mm per kg
+    ("STL-004", "TMT Bar Fe-500 16mm (per kg)",
+     MaterialCategory.STEEL, MaterialUnit.KG,
+     65, "TATA Steel / Sail Steel", None),
+
+    # Fe-500D TMT Bar 20mm per kg
+    ("STL-005", "TMT Bar Fe-500D 20mm (per kg)",
+     MaterialCategory.STEEL, MaterialUnit.KG,
+     65, "TATA Steel", None),
+
+    # MS Binding Wire 16G per kg
+    ("STL-006", "MS Binding Wire 16 Gauge (per kg)",
+     MaterialCategory.STEEL, MaterialUnit.KG,
+     80, "Local Supplier", None),
+
+    # ── BRICKS ───────────────────────────────────────────────────────────────
+    # First Class Modular Brick (230x110x70mm) per number
+    ("BRK-001", "First Class Modular Brick (230x110x70mm)",
+     MaterialCategory.BRICK, MaterialUnit.NUMBER,
+     10, "Local Brick Kiln", None),
+
+    # Second Class Brick
+    ("BRK-002", "Second Class Brick",
+     MaterialCategory.BRICK, MaterialUnit.NUMBER,
+     7, "Local Brick Kiln", None),
+
+    # Fly Ash Brick (per number)
+    ("BRK-003", "Fly Ash Brick (230x110x70mm)",
+     MaterialCategory.BRICK, MaterialUnit.NUMBER,
+     8, "ACC / Local Manufacturer", None),
+
+    # ── BLOCKS ───────────────────────────────────────────────────────────────
+    # AAC Block 600x200x200mm per number
+    ("BLK-001", "AAC Block 600x200x200mm",
+     MaterialCategory.BLOCK, MaterialUnit.NUMBER,
+     55, "Siporex / Biltech AAC", None),
+
+    # Hollow Concrete Block (HCB) 400x200x200mm
+    ("BLK-002", "Hollow Concrete Block 400x200x200mm",
+     MaterialCategory.BLOCK, MaterialUnit.NUMBER,
+     45, "Local Manufacturer", None),
+
+    # Solid Concrete Block 400x200x100mm
+    ("BLK-003", "Solid Concrete Block 400x200x100mm",
+     MaterialCategory.BLOCK, MaterialUnit.NUMBER,
+     35, "Local Manufacturer", None),
+
+    # ── PAINT ─────────────────────────────────────────────────────────────────
+    # Exterior Emulsion Paint per litre
+    ("PNT-001", "Exterior Emulsion / Weather Coat Paint (per litre)",
+     MaterialCategory.PAINT, MaterialUnit.LITER,
+     220, "Asian Paints / Berger", "1800-209-5678"),
+
+    # Interior Emulsion Paint per litre
+    ("PNT-002", "Interior Emulsion Paint (per litre)",
+     MaterialCategory.PAINT, MaterialUnit.LITER,
+     160, "Asian Paints / Nerolac", "1800-209-5678"),
+
+    # Primer (Water Based) per litre
+    ("PNT-003", "Wall Primer Water Based (per litre)",
+     MaterialCategory.PAINT, MaterialUnit.LITER,
+     90, "Asian Paints / Berger", None),
+
+    # Enamel Paint per litre
+    ("PNT-004", "Synthetic Enamel Paint (per litre)",
+     MaterialCategory.PAINT, MaterialUnit.LITER,
+     200, "Nerolac / Kansai", None),
+
+    # Textured Paint per litre
+    ("PNT-005", "Textured / Texture Coat Paint (per litre)",
+     MaterialCategory.PAINT, MaterialUnit.LITER,
+     280, "Asian Paints Apex", None),
+
+    # ── TILES ─────────────────────────────────────────────────────────────────
+    # Vitrified Floor Tile 600x600mm per m²
+    ("TIL-001", "Vitrified Floor Tile 600x600mm (per m²)",
+     MaterialCategory.TILE, MaterialUnit.SQUARE_METER,
+     650, "Kajaria / Somany / Orient", "1800-102-5530"),
+
+    # Ceramic Wall Tile 300x450mm per m²
+    ("TIL-002", "Ceramic Wall Tile 300x450mm (per m²)",
+     MaterialCategory.TILE, MaterialUnit.SQUARE_METER,
+     480, "Kajaria / Johnson Tiles", None),
+
+    # Digital Vitrified Tile 800x800mm per m²
+    ("TIL-003", "Digital Vitrified Tile 800x800mm (per m²)",
+     MaterialCategory.TILE, MaterialUnit.SQUARE_METER,
+     1200, "Kajaria / RAK Ceramics", None),
+
+    # Kotah Stone per m²
+    ("TIL-004", "Kotah Stone Flooring (per m²)",
+     MaterialCategory.TILE, MaterialUnit.SQUARE_METER,
+     380, "Rajasthan Stone Supplier", None),
+
+    # Indian Marble (White) per m²
+    ("TIL-005", "Indian Marble White 18mm (per m²)",
+     MaterialCategory.TILE, MaterialUnit.SQUARE_METER,
+     900, "Rajasthan Marble Dealer", None),
+
+    # ── WATERPROOFING ──────────────────────────────────────────────────────────
+    # Integral waterproofing compound per kg
+    ("WPF-001", "Integral Waterproofing Compound (per kg)",
+     MaterialCategory.WATERPROOFING, MaterialUnit.KG,
+     55, "Dr. Fixit / Fosroc / SikaIndiaF", None),
+
+    # Crystalline waterproofing powder per kg
+    ("WPF-002", "Crystalline Waterproofing Powder (per kg)",
+     MaterialCategory.WATERPROOFING, MaterialUnit.KG,
+     350, "PENETRON / Dr. Fixit", None),
+
+    # Bituminous Waterproofing Coating per litre
+    ("WPF-003", "Bituminous Waterproofing Coating (per litre)",
+     MaterialCategory.WATERPROOFING, MaterialUnit.LITER,
+     120, "Fosroc / SikaIndia", None),
+
+    # ── WOOD ──────────────────────────────────────────────────────────────────
+    # Teak Wood (Sagwan) per cubic foot
+    ("WOD-001", "Teak Wood (Sagwan) — per Cubic Foot",
+     MaterialCategory.WOOD, MaterialUnit.CUBIC_METER,
+     120000, "Timber Market", None),
+
+    # Sal Wood per cubic foot
+    ("WOD-002", "Sal Wood — per Cubic Foot",
+     MaterialCategory.WOOD, MaterialUnit.CUBIC_METER,
+     45000, "Timber Market", None),
+
+    # Flush Door (2100x900mm solid core)
+    ("WOD-003", "Flush Door 2100x900mm Solid Core",
+     MaterialCategory.WOOD, MaterialUnit.NUMBER,
+     4500, "Century Ply / Greenply", None),
+
+    # Plywood 18mm BWR per sheet (8x4 ft)
+    ("WOD-004", "BWR Plywood 18mm (8x4 ft sheet)",
+     MaterialCategory.WOOD, MaterialUnit.NUMBER,
+     2800, "Century Ply / Kitply", None),
+
+    # ── GLASS ─────────────────────────────────────────────────────────────────
+    # Float Glass 5mm per m²
+    ("GLS-001", "Float Glass 5mm (per m²)",
+     MaterialCategory.GLASS, MaterialUnit.SQUARE_METER,
+     350, "Saint Gobain / Asahi India", None),
+
+    # Tempered Glass 10mm per m²
+    ("GLS-002", "Tempered Glass 10mm (per m²)",
+     MaterialCategory.GLASS, MaterialUnit.SQUARE_METER,
+     1200, "Saint Gobain India", None),
+
+    # Aluminium Window Frame per m²
+    ("GLS-003", "Aluminium Sliding Window (per m²)",
+     MaterialCategory.GLASS, MaterialUnit.SQUARE_METER,
+     1800, "Jindal Aluminium / Hindalco", None),
+
+    # ── ELECTRICAL ──────────────────────────────────────────────────────────
+    # PVC Conduit 20mm per metre
+    ("ELC-001", "PVC Conduit 20mm (per metre)",
+     MaterialCategory.ELECTRICAL, MaterialUnit.LINEAR_METER,
+     28, "Havells / Finolex / Polycab", "1800-103-5678"),
+
+    # Electrical Wire 2.5mm² per metre
+    ("ELC-002", "FR Wire 2.5mm² (per metre)",
+     MaterialCategory.ELECTRICAL, MaterialUnit.LINEAR_METER,
+     35, "Polycab / Havells / Finolex", None),
+
+    # MCB Distribution Board 12-way
+    ("ELC-003", "MCB Distribution Board 12-way",
+     MaterialCategory.ELECTRICAL, MaterialUnit.NUMBER,
+     3500, "Legrand / Schneider / Havells", None),
+
+    # ── PLUMBING ──────────────────────────────────────────────────────────────
+    # UPVC Pipe 110mm (4 inch) per metre
+    ("PLB-001", "UPVC SWR Pipe 110mm (per metre)",
+     MaterialCategory.PLUMBING, MaterialUnit.LINEAR_METER,
+     220, "Astral Pipes / Supreme / Finolex", None),
+
+    # UPVC Pipe 63mm (2.5 inch) per metre
+    ("PLB-002", "UPVC Pressure Pipe 63mm (per metre)",
+     MaterialCategory.PLUMBING, MaterialUnit.LINEAR_METER,
+     120, "Astral Pipes / Supreme", None),
+
+    # CPVC Hot/Cold Pipe 25mm per metre
+    ("PLB-003", "CPVC Hot & Cold Pipe 25mm (per metre)",
+     MaterialCategory.PLUMBING, MaterialUnit.LINEAR_METER,
+     95, "Astral CPVC / FlowGuard", None),
+
+    # CP Bib Cock (Tap)
+    ("PLB-004", "CP Bib Cock / Tap (Standard)",
+     MaterialCategory.PLUMBING, MaterialUnit.NUMBER,
+     650, "Jaquar / Hindware / Cera", "1800-103-5527"),
+
+    # EWC Toilet (standard quality)
+    ("PLB-005", "EWC Toilet (Standard Quality)",
+     MaterialCategory.PLUMBING, MaterialUnit.NUMBER,
+     4500, "Cera / Parryware / Hindware", None),
+
+    # Washbasin (standard)
+    ("PLB-006", "Washbasin 550mm (Standard)",
+     MaterialCategory.PLUMBING, MaterialUnit.NUMBER,
+     2200, "Parryware / Hindware / Cera", None),
 ]
 
 
@@ -117,56 +316,65 @@ def seed_materials(db) -> int:
     return count
 
 
-def seed_admin(db) -> bool:
-    existing = db.query(User).filter(User.email == "admin@smartboq.com").first()
-    if existing:
-        return False
-    admin = User(
-        email="admin@smartboq.com",
-        full_name="System Administrator",
-        hashed_password=hash_password("Admin@1234"),
-        role=UserRole.ADMIN,
-        company="SmartBOQ Pro",
-        designation="System Administrator",
-        is_active=True,
-        is_verified=True,
-    )
-    db.add(admin)
+# Permanent users — always created, never deleted
+# Add any user here who should always have access
+PERMANENT_USERS = [
+    ("admin@smartboq.com",       "System Administrator",    "Admin@1234",    UserRole.ADMIN,                "SmartBOQ Pro",           "System Administrator"),
+    ("rockyrahul4143@gmail.com", "Rahul Singh",             "Rocky@1234",    UserRole.ADMIN,                "SmartBOQ Pro",           "Admin"),
+    ("rrana732672@gmail.com",    "Rahul Rana",              "Rana123@#",     UserRole.ADMIN,                "SmartBOQ Pro",           "Admin"),
+    ("engineer@smartboq.com",   "Demo Engineer",            "Engineer@1234", UserRole.ESTIMATION_ENGINEER,  "ABC Construction",       "Senior Estimation Engineer"),
+]
 
-    # Demo estimation engineer
-    demo = User(
-        email="engineer@smartboq.com",
-        full_name="Demo Engineer",
-        hashed_password=hash_password("Engineer@1234"),
-        role=UserRole.ESTIMATION_ENGINEER,
-        company="ABC Construction",
-        designation="Senior Estimation Engineer",
-        is_active=True,
-        is_verified=True,
-    )
-    db.add(demo)
+
+def seed_admin(db) -> int:
+    """Create permanent users. Safe to call multiple times — skips if exists."""
+    count = 0
+    for email, full_name, pwd, role, company, designation in PERMANENT_USERS:
+        if not db.query(User).filter(User.email == email).first():
+            db.add(User(
+                email=email,
+                full_name=full_name,
+                hashed_password=hash_password(pwd),
+                role=role,
+                company=company,
+                designation=designation,
+                is_active=True,
+                is_verified=True,
+            ))
+            count += 1
     db.commit()
-    return True
+    return count
 
 
 def run():
     print("🌱 SmartBOQ Pro — Seeding database...")
     db = SessionLocal()
     try:
-        # Admin users
-        created = seed_admin(db)
-        if created:
-            print("  ✅ Admin user:    admin@smartboq.com  /  Admin@1234")
-            print("  ✅ Demo engineer: engineer@smartboq.com  /  Engineer@1234")
+        # Permanent users — always ensured
+        added = seed_admin(db)
+        if added > 0:
+            print(f"  ✅ {added} user(s) created")
+            for email, _, pwd, _, _, _ in PERMANENT_USERS:
+                print(f"     {email}  /  {pwd}")
         else:
-            print("  ℹ️  Admin user already exists — skipping")
+            print("  ℹ️  All users already exist — skipping")
 
-        # Materials
         mat_count = seed_materials(db)
         if mat_count > 0:
-            print(f"  ✅ {mat_count} materials seeded (2024 PKR rates)")
+            print(f"  ✅ {mat_count} materials seeded (2024 India INR rates)")
         else:
             print("  ℹ️  Materials already seeded — skipping")
+
+        # Seed SOR / Item Master
+        try:
+            from app.scripts.seed_sor import seed_sor
+            sor_count = seed_sor(db)
+            if sor_count > 0:
+                print(f"  ✅ {sor_count} SOR items seeded (CPWD DSR 2024)")
+            else:
+                print("  ℹ️  SOR items already seeded — skipping")
+        except Exception as e:
+            print(f"  ⚠️  SOR seed skipped: {e}")
 
         print("🚀 Seed complete!")
     except Exception as e:

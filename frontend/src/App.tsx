@@ -19,6 +19,11 @@ const AnalyticsPage      = lazy(() => import('@/pages/AnalyticsPage'))
 const DXFPage            = lazy(() => import('@/pages/DXFPage'))
 const InspectionPage     = lazy(() => import('@/pages/InspectionPage'))
 const ProfilePage        = lazy(() => import('@/pages/ProfilePage'))
+const SORPage            = lazy(() => import('@/pages/SORPage'))
+const MeasurementPage    = lazy(() => import('@/pages/MeasurementPage'))
+const RateAnalysisPage   = lazy(() => import('@/pages/RateAnalysisPage'))
+const BillingPage        = lazy(() => import('@/pages/BillingPage'))
+const DrawingTakeoffPage = lazy(() => import('@/pages/DrawingTakeoffPage'))
 
 function Loader() {
   return (
@@ -49,16 +54,21 @@ export default function App() {
               {/* Protected */}
               <Route element={<ProtectedRoute />}>
                 <Route element={<AppLayout />}>
-                  <Route path="/dashboard"  element={<DashboardPage />} />
-                  <Route path="/projects"   element={<ProjectsPage />} />
-                  <Route path="/buildings"  element={<BuildingsPage />} />
-                  <Route path="/estimation" element={<EstimationPage />} />
-                  <Route path="/materials"  element={<MaterialsPage />} />
-                  <Route path="/boq"        element={<BOQPage />} />
-                  <Route path="/analytics"  element={<AnalyticsPage />} />
-                  <Route path="/dxf"        element={<DXFPage />} />
-                  <Route path="/inspection" element={<InspectionPage />} />
-                  <Route path="/profile"    element={<ProfilePage />} />
+                  <Route path="/dashboard"     element={<DashboardPage />} />
+                  <Route path="/projects"      element={<ProjectsPage />} />
+                  <Route path="/buildings"     element={<BuildingsPage />} />
+                  <Route path="/estimation"    element={<EstimationPage />} />
+                  <Route path="/materials"     element={<MaterialsPage />} />
+                  <Route path="/boq"           element={<BOQPage />} />
+                  <Route path="/analytics"     element={<AnalyticsPage />} />
+                  <Route path="/dxf"           element={<DXFPage />} />
+                  <Route path="/inspection"    element={<InspectionPage />} />
+                  <Route path="/profile"       element={<ProfilePage />} />
+                  <Route path="/sor"           element={<SORPage />} />
+                  <Route path="/measurements"  element={<MeasurementPage />} />
+                  <Route path="/rate-analysis" element={<RateAnalysisPage />} />
+                  <Route path="/billing"       element={<BillingPage />} />
+                  <Route path="/drawing-takeoff" element={<DrawingTakeoffPage />} />
                   {/* Catch-all → dashboard */}
                   <Route path="*" element={<Navigate to="/dashboard" replace />} />
                 </Route>

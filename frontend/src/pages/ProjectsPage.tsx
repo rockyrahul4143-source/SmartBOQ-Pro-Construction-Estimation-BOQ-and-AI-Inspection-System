@@ -24,8 +24,8 @@ const schema = z.object({
   status: z.string().default('draft'),
   description: z.string().optional(),
   city: z.string().optional(),
-  country: z.string().default('Pakistan'),
-  currency: z.string().default('PKR'),
+  country: z.string().default('India'),
+  currency: z.string().default('INR'),
 })
 type FormData = z.infer<typeof schema>
 

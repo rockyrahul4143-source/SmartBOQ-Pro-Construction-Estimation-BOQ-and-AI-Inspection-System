@@ -188,7 +188,7 @@ function ResultCard({ result }: { result: any }) {
         {/* Repair cost */}
         {(result.estimated_repair_cost_min > 0 || result.estimated_repair_cost_max > 0) && (
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-            <p className="text-xs font-semibold text-amber-800 mb-1">Estimated Repair Cost (PKR)</p>
+            <p className="text-xs font-semibold text-amber-800 mb-1">Estimated Repair Cost (INR)</p>
             <p className="text-xl font-bold text-amber-900">
               {result.estimated_repair_cost_min?.toLocaleString()} —{' '}
               {result.estimated_repair_cost_max?.toLocaleString()}
