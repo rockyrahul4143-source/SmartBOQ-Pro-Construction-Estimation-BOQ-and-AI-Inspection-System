@@ -7,7 +7,7 @@ from app.db.base import get_db
 from app.core.dependencies import get_current_active_user
 from app.crud import building as building_crud
 from app.crud import project as project_crud
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.schemas.building import (
     BuildingCreate, BuildingUpdate, BuildingOut, RoomCreate, RoomOut,
 )
@@ -16,29 +16,44 @@ from app.schemas.auth import MessageResponse
 router = APIRouter()
 
 
-def _get_project_or_404(db, project_id):
+# ── Shared auth helpers ───────────────────────────────
+
+def _get_project_or_404(db: Session, project_id):
     p = project_crud.get_project_by_id(db, project_id)
     if not p:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
     return p
 
 
-def _get_building_or_404(db, building_id):
+def _get_building_or_404(db: Session, building_id):
     b = building_crud.get_building_by_id(db, building_id)
     if not b:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Building not found")
     return b
 
 
+def _check_project_access(project, user: User) -> None:
+    """Admin and PM can access all projects. Others must own the project."""
+    if user.role in (UserRole.ADMIN, UserRole.PROJECT_MANAGER):
+        return
+    if str(project.created_by) != str(user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have access to this project",
+        )
+
+
 # ── Building CRUD ─────────────────────────────────────
+
 @router.get("/project/{project_id}", response_model=List[BuildingOut],
             summary="List buildings for a project")
 def list_buildings(
     project_id: UUID,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
-    _get_project_or_404(db, project_id)
+    project = _get_project_or_404(db, project_id)
+    _check_project_access(project, current_user)
     return building_crud.get_buildings_by_project(db, project_id)
 
 
@@ -47,9 +62,10 @@ def list_buildings(
 def create_building(
     payload: BuildingCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
-    _get_project_or_404(db, payload.project_id)
+    project = _get_project_or_404(db, payload.project_id)
+    _check_project_access(project, current_user)
     return building_crud.create_building(db, payload)
 
 
@@ -57,9 +73,12 @@ def create_building(
 def get_building(
     building_id: UUID,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
-    return _get_building_or_404(db, building_id)
+    building = _get_building_or_404(db, building_id)
+    project  = _get_project_or_404(db, building.project_id)
+    _check_project_access(project, current_user)
+    return building
 
 
 @router.put("/{building_id}", response_model=BuildingOut, summary="Update building dimensions")
@@ -67,9 +86,11 @@ def update_building(
     building_id: UUID,
     payload: BuildingUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     building = _get_building_or_404(db, building_id)
+    project  = _get_project_or_404(db, building.project_id)
+    _check_project_access(project, current_user)
     return building_crud.update_building(db, building, payload)
 
 
@@ -77,34 +98,41 @@ def update_building(
 def delete_building(
     building_id: UUID,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     building = _get_building_or_404(db, building_id)
+    project  = _get_project_or_404(db, building.project_id)
+    _check_project_access(project, current_user)
     building_crud.delete_building(db, building)
     return MessageResponse(message="Building deleted.")
 
 
 # ── Room CRUD ─────────────────────────────────────────
+
 @router.get("/{building_id}/rooms", response_model=List[RoomOut],
             summary="List all rooms in a building")
 def list_rooms(
     building_id: UUID,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
-    _get_building_or_404(db, building_id)
+    building = _get_building_or_404(db, building_id)
+    project  = _get_project_or_404(db, building.project_id)
+    _check_project_access(project, current_user)
     return building_crud.get_rooms_by_building(db, building_id)
 
 
-@router.post("/{building_id}/rooms", response_model=RoomOut, status_code=status.HTTP_201_CREATED,
-             summary="Add a room to a building")
+@router.post("/{building_id}/rooms", response_model=RoomOut,
+             status_code=status.HTTP_201_CREATED, summary="Add a room to a building")
 def add_room(
     building_id: UUID,
     payload: RoomCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
-    _get_building_or_404(db, building_id)
+    building = _get_building_or_404(db, building_id)
+    project  = _get_project_or_404(db, building.project_id)
+    _check_project_access(project, current_user)
     return building_crud.create_room(db, building_id, payload)
 
 
@@ -114,8 +142,11 @@ def delete_room(
     building_id: UUID,
     room_id: UUID,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
+    building = _get_building_or_404(db, building_id)
+    project  = _get_project_or_404(db, building.project_id)
+    _check_project_access(project, current_user)
     deleted = building_crud.delete_room(db, room_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")

@@ -9,7 +9,7 @@ from app.core.dependencies import get_current_active_user
 from app.crud import boq as boq_crud
 from app.crud import project as project_crud
 from app.crud.estimate import get_estimates_by_project
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.services.report_generator import (
     generate_boq_pdf, generate_boq_excel, generate_boq_csv,
     generate_quantity_pdf,
@@ -17,6 +17,8 @@ from app.services.report_generator import (
 
 router = APIRouter()
 
+
+# ── Shared auth helpers ───────────────────────────────
 
 def _project_or_404(db, project_id):
     p = project_crud.get_project_by_id(db, project_id)
@@ -32,15 +34,28 @@ def _boq_or_404(db, boq_id):
     return b
 
 
+def _check_project_access(project, user: User) -> None:
+    """Admin and PM can access all projects. Others must own the project."""
+    if user.role in (UserRole.ADMIN, UserRole.PROJECT_MANAGER):
+        return
+    if str(project.created_by) != str(user.id):
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have access to this project",
+        )
+
+
 # ── BOQ Reports ───────────────────────────────────────
+
 @router.get("/boq/{boq_id}/pdf", summary="Download BOQ as PDF")
 def boq_pdf(
     boq_id: UUID,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
-    boq = _boq_or_404(db, boq_id)
+    boq     = _boq_or_404(db, boq_id)
     project = _project_or_404(db, boq.project_id)
+    _check_project_access(project, current_user)
     pdf_bytes = generate_boq_pdf(boq, project)
     return Response(
         content=pdf_bytes,
@@ -53,10 +68,11 @@ def boq_pdf(
 def boq_excel(
     boq_id: UUID,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
-    boq = _boq_or_404(db, boq_id)
+    boq     = _boq_or_404(db, boq_id)
     project = _project_or_404(db, boq.project_id)
+    _check_project_access(project, current_user)
     excel_bytes = generate_boq_excel(boq, project)
     return Response(
         content=excel_bytes,
@@ -69,10 +85,11 @@ def boq_excel(
 def boq_csv(
     boq_id: UUID,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
-    boq = _boq_or_404(db, boq_id)
+    boq     = _boq_or_404(db, boq_id)
     project = _project_or_404(db, boq.project_id)
+    _check_project_access(project, current_user)
     csv_str = generate_boq_csv(boq, project)
     return Response(
         content=csv_str.encode("utf-8"),
@@ -82,13 +99,15 @@ def boq_csv(
 
 
 # ── Quantity Reports ──────────────────────────────────
+
 @router.get("/quantity/{project_id}/pdf", summary="Download Quantity Report as PDF")
 def quantity_pdf(
     project_id: UUID,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     project = _project_or_404(db, project_id)
+    _check_project_access(project, current_user)
     estimates = get_estimates_by_project(db, project_id)
     if not estimates:
         raise HTTPException(status_code=404, detail="No estimates found. Run estimation first.")
@@ -104,9 +123,10 @@ def quantity_pdf(
 def quantity_csv(
     project_id: UUID,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     project = _project_or_404(db, project_id)
+    _check_project_access(project, current_user)
     estimates = get_estimates_by_project(db, project_id)
     if not estimates:
         raise HTTPException(status_code=404, detail="No estimates found.")

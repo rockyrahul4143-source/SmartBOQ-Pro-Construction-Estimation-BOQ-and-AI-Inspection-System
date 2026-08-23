@@ -116,11 +116,8 @@ def get_project_stats(db: Session, user_id: Optional[UUID] = None) -> dict:
     }
 
 
-def get_recent_projects(db: Session, limit: int = 5) -> List[Project]:
-    return (
-        db.query(Project)
-        .filter(Project.status != ProjectStatus.ARCHIVED)
-        .order_by(Project.updated_at.desc())
-        .limit(limit)
-        .all()
-    )
+def get_recent_projects(db: Session, limit: int = 5, user_id: Optional[UUID] = None) -> List[Project]:
+    q = db.query(Project).filter(Project.status != ProjectStatus.ARCHIVED)
+    if user_id:
+        q = q.filter(Project.created_by == str(user_id))
+    return q.order_by(Project.updated_at.desc()).limit(limit).all()

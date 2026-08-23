@@ -67,8 +67,13 @@ def get_stats(
 
 # ── Recent ────────────────────────────────────────────
 @router.get("/recent", response_model=List[ProjectListItem], summary="5 most recently updated projects")
-def get_recent(db: Session = Depends(get_db), _: User = Depends(get_current_active_user)):
-    return project_crud.get_recent_projects(db)
+def get_recent(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    from app.models.user import UserRole
+    owned_only = current_user.role not in (UserRole.ADMIN, UserRole.PROJECT_MANAGER)
+    return project_crud.get_recent_projects(db, user_id=current_user.id if owned_only else None)
 
 
 # ── Create ────────────────────────────────────────────
@@ -135,6 +140,8 @@ def delete_project(
     project = project_crud.get_project_by_id(db, project_id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    # PM can only delete projects they own; Admin can delete any
+    _check_access(project, current_user)
     name = project.project_name
     project_crud.delete_project(db, project)
     return MessageResponse(message=f"Project '{name}' deleted.")

@@ -34,27 +34,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   })
 
   useEffect(() => {
+    // Restore session from stored token only — never auto-login with hardcoded credentials
     const token = localStorage.getItem('access_token')
     if (token) {
       api.get('/auth/me')
         .then(({ data }) => setState({ user: data, isLoading: false, isAuthenticated: true }))
-        .catch(() => autoLogin())
+        .catch(() => {
+          localStorage.removeItem('access_token')
+          localStorage.removeItem('refresh_token')
+          setState({ user: null, isLoading: false, isAuthenticated: false })
+        })
     } else {
-      autoLogin()
+      setState({ user: null, isLoading: false, isAuthenticated: false })
     }
   }, [])
-
-  const autoLogin = () => {
-    api.post('/auth/login', { email: 'admin@smartboq.com', password: 'Admin@1234' })
-      .then(({ data }) => {
-        localStorage.setItem('access_token', data.access_token)
-        localStorage.setItem('refresh_token', data.refresh_token)
-        setState({ user: data.user, isLoading: false, isAuthenticated: true })
-      })
-      .catch(() => {
-        setState({ user: null, isLoading: false, isAuthenticated: false })
-      })
-  }
 
   const login = useCallback(async (email: string, password: string) => {
     const { data } = await api.post('/auth/login', { email, password })
@@ -64,7 +57,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const logout = useCallback(() => {
-    localStorage.clear()
+    localStorage.removeItem('access_token')
+    localStorage.removeItem('refresh_token')
     setState({ user: null, isLoading: false, isAuthenticated: false })
   }, [])
 
@@ -79,5 +73,4 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   )
 }
 
-// Re-export hooks so existing imports from '@/contexts/AuthContext' keep working
 export { useAuth, useIsAdmin } from '@/hooks/useAuth'

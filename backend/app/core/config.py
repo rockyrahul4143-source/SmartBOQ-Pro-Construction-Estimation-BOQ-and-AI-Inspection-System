@@ -10,8 +10,9 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     API_V1_STR: str = "/api/v1"
 
-    # Security — must be set in .env; fallback only for local dev
-    SECRET_KEY: str = "local-dev-secret-key-smartboq-pro-2024"
+    # Security — must be overridden in production via environment variable
+    # The fallback value is only safe for local development
+    SECRET_KEY: str = "local-dev-secret-key-change-in-production"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -19,8 +20,11 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "sqlite:///./smartboq.db"
 
-    # CORS
-    ALLOWED_ORIGINS: Union[str, List[str]] = "*"
+    # CORS — set ALLOWED_ORIGINS env var on Render to your exact Vercel URL
+    # Example: ALLOWED_ORIGINS=https://smart-boq-pro-construction-estimati.vercel.app
+    # Multiple origins: comma-separated
+    # Local dev fallback — never use "*" in production
+    ALLOWED_ORIGINS: Union[str, List[str]] = "http://localhost:5173,http://localhost:5174"
 
     @field_validator("ALLOWED_ORIGINS", mode="before")
     @classmethod

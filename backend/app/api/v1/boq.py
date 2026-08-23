@@ -9,7 +9,7 @@ from app.db.base import get_db
 from app.core.dependencies import get_current_active_user, require_admin_or_pm
 from app.crud import boq as boq_crud
 from app.crud import project as project_crud
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.schemas.boq import (
     BOQCreate, BOQUpdate, BOQOut, BOQListItem,
     BOQItemCreate, BOQItemUpdate, BOQItemOut,
@@ -19,28 +19,56 @@ from app.schemas.auth import MessageResponse
 router = APIRouter()
 
 
-def _get_boq_or_404(db, boq_id):
+# ── Shared auth helpers ───────────────────────────────
+
+def _get_boq_or_404(db: Session, boq_id):
     b = boq_crud.get_boq_by_id(db, boq_id)
     if not b:
-        raise HTTPException(status_code=404, detail="BOQ not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="BOQ not found")
     return b
 
 
+def _check_project_access(project, user: User) -> None:
+    """Admin and PM can access all projects. Others must own the project."""
+    if user.role in (UserRole.ADMIN, UserRole.PROJECT_MANAGER):
+        return
+    if str(project.created_by) != str(user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have access to this project",
+        )
+
+
+def _get_project_and_check(db: Session, project_id, user: User):
+    p = project_crud.get_project_by_id(db, project_id)
+    if not p:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    _check_project_access(p, user)
+    return p
+
+
+def _get_boq_and_check(db: Session, boq_id, user: User):
+    """Fetch BOQ then verify the caller can access its parent project."""
+    boq = _get_boq_or_404(db, boq_id)
+    _get_project_and_check(db, boq.project_id, user)
+    return boq
+
+
 # ── List BOQs for a project ───────────────────────────
+
 @router.get("/project/{project_id}", response_model=List[BOQListItem],
             summary="List all BOQs for a project")
 def list_boqs(
     project_id: UUID,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
-    p = project_crud.get_project_by_id(db, project_id)
-    if not p:
-        raise HTTPException(status_code=404, detail="Project not found")
+    _get_project_and_check(db, project_id, current_user)
     return boq_crud.get_boqs_by_project(db, project_id)
 
 
 # ── Create BOQ ────────────────────────────────────────
+
 @router.post("/", response_model=BOQOut, status_code=status.HTTP_201_CREATED,
              summary="Create a new BOQ (empty)")
 def create_boq(
@@ -48,52 +76,49 @@ def create_boq(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    p = project_crud.get_project_by_id(db, payload.project_id)
-    if not p:
-        raise HTTPException(status_code=404, detail="Project not found")
+    _get_project_and_check(db, payload.project_id, current_user)
     return boq_crud.create_boq(db, payload, current_user.id)
 
 
 # ── Auto-generate BOQ from estimates ──────────────────
+
 @router.post("/{boq_id}/auto-generate", response_model=BOQOut,
              summary="Auto-populate BOQ items from saved quantity estimates")
 def auto_generate(
     boq_id: UUID,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
-    """
-    Reads all saved Estimate rows for the BOQ's project and creates
-    a properly sectioned BOQ with correct quantities.
-    Engineer still needs to fill in rates.
-    """
-    boq = _get_boq_or_404(db, boq_id)
+    boq = _get_boq_and_check(db, boq_id, current_user)
     return boq_crud.auto_generate_from_estimates(db, boq)
 
 
 # ── Get BOQ ───────────────────────────────────────────
+
 @router.get("/{boq_id}", response_model=BOQOut, summary="Get full BOQ with all line items")
 def get_boq(
     boq_id: UUID,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
-    return _get_boq_or_404(db, boq_id)
+    return _get_boq_and_check(db, boq_id, current_user)
 
 
 # ── Update BOQ ────────────────────────────────────────
+
 @router.put("/{boq_id}", response_model=BOQOut, summary="Update BOQ header (title, %, status)")
 def update_boq(
     boq_id: UUID,
     payload: BOQUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
-    boq = _get_boq_or_404(db, boq_id)
+    boq = _get_boq_and_check(db, boq_id, current_user)
     return boq_crud.update_boq(db, boq, payload)
 
 
 # ── Approve BOQ ───────────────────────────────────────
+
 @router.post("/{boq_id}/approve", response_model=BOQOut,
              summary="Mark BOQ as approved (Admin/PM only)")
 def approve_boq(
@@ -101,33 +126,35 @@ def approve_boq(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_pm),
 ):
-    boq = _get_boq_or_404(db, boq_id)
+    boq = _get_boq_and_check(db, boq_id, current_user)
     return boq_crud.approve_boq(db, boq, current_user.id)
 
 
 # ── Delete BOQ ────────────────────────────────────────
+
 @router.delete("/{boq_id}", response_model=MessageResponse,
                summary="Delete a BOQ (Admin/PM only)")
 def delete_boq(
     boq_id: UUID,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin_or_pm),
+    current_user: User = Depends(require_admin_or_pm),
 ):
-    boq = _get_boq_or_404(db, boq_id)
+    boq = _get_boq_and_check(db, boq_id, current_user)
     boq_crud.delete_boq(db, boq)
     return MessageResponse(message="BOQ deleted.")
 
 
 # ── BOQ Items ─────────────────────────────────────────
+
 @router.post("/{boq_id}/items", response_model=BOQItemOut,
              status_code=status.HTTP_201_CREATED, summary="Add a line item to BOQ")
 def add_item(
     boq_id: UUID,
     payload: BOQItemCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
-    _get_boq_or_404(db, boq_id)
+    _get_boq_and_check(db, boq_id, current_user)
     return boq_crud.add_item(db, boq_id, payload)
 
 
@@ -138,15 +165,16 @@ def update_item(
     item_id: UUID,
     payload: BOQItemUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
+    _get_boq_and_check(db, boq_id, current_user)
     from app.models.boq import BOQItem
     item = db.query(BOQItem).filter(
         BOQItem.id == str(item_id),
         BOQItem.boq_id == str(boq_id)
     ).first()
     if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     return boq_crud.update_item(db, item, payload)
 
 
@@ -156,14 +184,15 @@ def delete_item(
     boq_id: UUID,
     item_id: UUID,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
+    _get_boq_and_check(db, boq_id, current_user)
     from app.models.boq import BOQItem
     item = db.query(BOQItem).filter(
         BOQItem.id == str(item_id),
         BOQItem.boq_id == str(boq_id)
     ).first()
     if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     boq_crud.delete_item(db, item)
     return MessageResponse(message="Item deleted.")

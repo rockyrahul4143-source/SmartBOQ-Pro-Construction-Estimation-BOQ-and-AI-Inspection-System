@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.base import get_db
-from app.core.dependencies import get_current_active_user, require_admin
+from app.core.dependencies import get_current_active_user, require_admin, require_admin_or_pm
 from app.crud import user as user_crud
 from app.models.user import User
 from app.schemas.user import UserOut, UserUpdate, UserUpdateRole, ChangePassword, UserOutBrief
@@ -93,9 +93,10 @@ def delete_user(
     return MessageResponse(message=f"User {user.email} deleted successfully.")
 
 
-@router.get("/brief/all", response_model=List[UserOutBrief], summary="List users (brief) for dropdowns")
+@router.get("/brief/all", response_model=List[UserOutBrief],
+            summary="List users (brief) for dropdowns — Admin/PM only")
 def list_users_brief(
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    _: User = Depends(require_admin_or_pm),
 ):
     return user_crud.get_all_users(db, limit=500)

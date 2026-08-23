@@ -1,7 +1,7 @@
 from typing import Optional
 from uuid import UUID
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func, text
 
@@ -12,6 +12,7 @@ from app.models.project import Project, ProjectStatus, BuildingType
 from app.models.estimate import Estimate, WorkType
 from app.models.boq import BOQ
 from app.models.material import Material, MaterialRateHistory
+from app.crud import project as project_crud
 
 router = APIRouter()
 
@@ -157,11 +158,24 @@ def cost_trends(
 def material_usage(
     project_id: Optional[UUID] = None,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     q = db.query(Estimate)
     if project_id:
+        # Verify caller can access this specific project
+        p = project_crud.get_project_by_id(db, project_id) if project_id else None
+        if not p:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if current_user.role not in (UserRole.ADMIN, UserRole.PROJECT_MANAGER):
+            if str(p.created_by) != str(current_user.id):
+                raise HTTPException(status_code=403, detail="You do not have access to this project")
         q = q.filter(Estimate.project_id == str(project_id))
+    elif current_user.role not in (UserRole.ADMIN, UserRole.PROJECT_MANAGER):
+        # Scope to only this user's projects
+        owned_ids = [str(p.id) for p in db.query(Project).filter(
+            Project.created_by == str(current_user.id)
+        ).all()]
+        q = q.filter(Estimate.project_id.in_(owned_ids))
     rows = q.all()
 
     totals = {
@@ -189,8 +203,17 @@ def material_usage(
 def cost_distribution(
     project_id: UUID,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
+    # Ownership check
+    from app.crud import project as project_crud
+    p = project_crud.get_project_by_id(db, project_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if current_user.role not in (UserRole.ADMIN, UserRole.PROJECT_MANAGER):
+        if str(p.created_by) != str(current_user.id):
+            raise HTTPException(status_code=403, detail="You do not have access to this project")
+
     estimates = db.query(Estimate).filter(Estimate.project_id == str(project_id)).all()
     if not estimates:
         return {"message": "No estimates found. Run estimation first.", "data": [], "total_cost": 0}
@@ -218,13 +241,16 @@ def cost_distribution(
 def project_comparison(
     project_ids: str = Query(..., description="Comma-separated project UUIDs"),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     try:
         ids = [str(UUID(pid.strip())) for pid in project_ids.split(",") if pid.strip()]
     except ValueError:
         return []
     projects = db.query(Project).filter(Project.id.in_(ids)).all()
+    # Filter to only projects the caller is authorized to see
+    if current_user.role not in (UserRole.ADMIN, UserRole.PROJECT_MANAGER):
+        projects = [p for p in projects if str(p.created_by) == str(current_user.id)]
     result = []
     for p in projects:
         estimates = db.query(Estimate).filter(Estimate.project_id == str(p.id)).all()

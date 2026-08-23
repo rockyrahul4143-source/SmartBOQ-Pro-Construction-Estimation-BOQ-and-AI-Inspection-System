@@ -294,11 +294,16 @@ def inspection_stats(
 def get_inspection(
     inspection_id: UUID,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     ins = db.query(Inspection).filter(Inspection.id == str(inspection_id)).first()
     if not ins:
         raise HTTPException(status_code=404, detail="Inspection not found")
+    # Admin can access any inspection; others only their own
+    from app.models.user import UserRole as UR
+    if current_user.role != UR.ADMIN:
+        if str(ins.inspected_by) != str(current_user.id):
+            raise HTTPException(status_code=403, detail="You do not have access to this inspection")
     return ins
 
 
@@ -309,11 +314,16 @@ def verify_inspection(
     inspection_id: UUID,
     notes: Optional[str] = None,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     ins = db.query(Inspection).filter(Inspection.id == str(inspection_id)).first()
     if not ins:
         raise HTTPException(status_code=404, detail="Inspection not found")
+    # Admin can verify any inspection; others only their own
+    from app.models.user import UserRole as UR
+    if current_user.role != UR.ADMIN:
+        if str(ins.inspected_by) != str(current_user.id):
+            raise HTTPException(status_code=403, detail="You do not have access to this inspection")
     ins.is_verified = True
     if notes:
         ins.notes = notes
