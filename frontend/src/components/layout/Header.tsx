@@ -1,6 +1,6 @@
 import { Menu, Sun, Moon, Bell } from 'lucide-react'
 import { useTheme } from '@/contexts/ThemeContext'
-import { useAuth } from '@/contexts/AuthContext'
+import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/button'
 
 interface HeaderProps {

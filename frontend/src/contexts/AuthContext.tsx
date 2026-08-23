@@ -72,5 +72,3 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     </AuthContext.Provider>
   )
 }
-
-export { useAuth, useIsAdmin } from '@/hooks/useAuth'

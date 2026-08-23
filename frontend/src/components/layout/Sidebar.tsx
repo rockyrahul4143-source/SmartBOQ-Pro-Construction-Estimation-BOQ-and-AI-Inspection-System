@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { cn } from '@/lib/utils'
-import { useAuth } from '@/contexts/AuthContext'
+import { useAuth } from '@/hooks/useAuth'
 import {
   LayoutDashboard, FolderOpen, Building2, Calculator, Package,
   FileText, BarChart3, Upload, Eye, LogOut, HardHat,

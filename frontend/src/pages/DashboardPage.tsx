@@ -7,7 +7,7 @@ import { FolderOpen, DollarSign, Package, TrendingUp } from 'lucide-react'
 import api from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatCurrency, formatDate, capitalize, statusColor } from '@/lib/utils'
-import { useAuth } from '@/contexts/AuthContext'
+import { useAuth } from '@/hooks/useAuth'
 
 const COLORS = ['#1E3A5F', '#2E86AB', '#F0A500', '#10B981', '#EF4444', '#8B5CF6']
 
