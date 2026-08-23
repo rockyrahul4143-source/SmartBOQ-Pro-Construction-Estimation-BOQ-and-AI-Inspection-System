@@ -56,3 +56,13 @@
   .no-print { display: none !important; }
   .print-full { width: 100% !important; }
 }
+
+/* ── Mobile responsive helpers ──────────────────────── */
+
+/* Tables scroll horizontally on small screens */
+.overflow-x-auto { -webkit-overflow-scrolling: touch; }
+
+/* Cards — full width on small screens */
+@media (max-width: 640px) {
+  .card-mobile-full { width: 100%; }
+}

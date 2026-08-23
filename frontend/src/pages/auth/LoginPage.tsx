@@ -91,7 +91,7 @@ export default function LoginPage() {
             </form>
           </CardContent>
         </Card>
-        <p className="text-center text-xs text-white/40 mt-6">© 2024 SmartBOQ Pro. All rights reserved.</p>
+        <p className="text-center text-xs text-white/40 mt-6">© {new Date().getFullYear()} SmartBOQ Pro · Rahul Singh. All rights reserved.</p>
       </div>
     </div>
   )
