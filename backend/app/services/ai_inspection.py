@@ -9,6 +9,8 @@ Models (consistent cache keys used everywhere):
 
 Currency: INR (Indian Rupees)
 Repair costs: dynamic — based on actual confidence score, no hard limits
+
+Model hosting: Hugging Face Hub (set HF_REPO_ID env var on Render)
 """
 from __future__ import annotations
 import os, io, hashlib, logging
@@ -19,8 +21,62 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
-ML_DIR = Path(__file__).parent.parent.parent / "ml_models"
-ML_DIR.mkdir(exist_ok=True)
+# ── Model directory ───────────────────────────────────
+# On Render: /tmp/ml_models (ephemeral but downloaded at startup)
+# Locally:   backend/ml_models (persistent)
+_IS_RENDER = os.getenv("APP_ENV") == "production" or os.getenv("RENDER") == "true"
+if _IS_RENDER:
+    ML_DIR = Path("/tmp/ml_models")
+else:
+    ML_DIR = Path(__file__).parent.parent.parent / "ml_models"
+
+ML_DIR.mkdir(parents=True, exist_ok=True)
+
+# Hugging Face repo — set HF_REPO_ID on Render
+# e.g. "rockyrahul4143/smartboq-models"
+HF_REPO_ID = os.getenv("HF_REPO_ID", "")
+
+MODELS_NEEDED = [
+    "ResNet50_model.h5",
+    "VGG16_model.h5",
+    "InceptionV3_model.h5",
+    "crack_model.h5",
+]
+
+# ── Model cache ───────────────────────────────────────
+_models: dict = {}
+TF_AVAILABLE: bool = False
+
+
+# ── Download models from Hugging Face ────────────────
+def _download_models_from_hf() -> bool:
+    """Download missing models from HF Hub. Returns True if any downloaded."""
+    if not HF_REPO_ID:
+        logger.warning("HF_REPO_ID not set — skipping model download")
+        return False
+
+    missing = [m for m in MODELS_NEEDED if not (ML_DIR / m).exists()]
+    if not missing:
+        logger.info("All model files already present")
+        return True
+
+    try:
+        from huggingface_hub import hf_hub_download
+        logger.info(f"Downloading {len(missing)} model(s) from {HF_REPO_ID}...")
+        for fname in missing:
+            logger.info(f"  Downloading {fname}...")
+            local_path = hf_hub_download(
+                repo_id=HF_REPO_ID,
+                filename=fname,
+                local_dir=str(ML_DIR),
+                repo_type="model",
+            )
+            logger.info(f"  Saved to {local_path}")
+        logger.info("All models downloaded successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to download models from HF: {e}")
+        return False
 
 # ── Model cache ───────────────────────────────────────
 _models: dict = {}
@@ -55,8 +111,13 @@ def preload_all_models() -> None:
         TF_AVAILABLE = True
         logger.info(f"TensorFlow {tf.__version__} ready")
     except ImportError:
-        logger.warning("TensorFlow not available")
+        logger.warning("TensorFlow not available — AI inspection disabled")
         return
+
+    # Download models from HF if running on Render and files are missing
+    if _IS_RENDER or HF_REPO_ID:
+        _download_models_from_hf()
+
     specs = [
         ("resnet50_crack",    ML_DIR / "ResNet50_model.h5"),
         ("vgg16_crack",       ML_DIR / "VGG16_model.h5"),
