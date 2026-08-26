@@ -36,17 +36,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Restore session from stored token only — never auto-login with hardcoded credentials
     const token = localStorage.getItem('access_token')
-    if (token) {
-      api.get('/auth/me')
-        .then(({ data }) => setState({ user: data, isLoading: false, isAuthenticated: true }))
-        .catch(() => {
-          localStorage.removeItem('access_token')
-          localStorage.removeItem('refresh_token')
-          setState({ user: null, isLoading: false, isAuthenticated: false })
-        })
-    } else {
+    if (!token) {
       setState({ user: null, isLoading: false, isAuthenticated: false })
+      return
     }
+
+    // 10-second timeout — if backend is cold-starting, fail safely to login page
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 10_000)
+
+    api.get('/auth/me', { signal: controller.signal })
+      .then(({ data }) => {
+        clearTimeout(timer)
+        setState({ user: data, isLoading: false, isAuthenticated: true })
+      })
+      .catch(() => {
+        clearTimeout(timer)
+        // Token invalid, expired, network error, or backend timeout → clear and show login
+        localStorage.removeItem('access_token')
+        localStorage.removeItem('refresh_token')
+        setState({ user: null, isLoading: false, isAuthenticated: false })
+      })
   }, [])
 
   const login = useCallback(async (email: string, password: string) => {
