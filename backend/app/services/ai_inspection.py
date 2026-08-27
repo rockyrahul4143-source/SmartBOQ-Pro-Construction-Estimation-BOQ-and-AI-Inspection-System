@@ -10,10 +10,10 @@ Models (consistent cache keys used everywhere):
 Currency: INR (Indian Rupees)
 Repair costs: dynamic — based on actual confidence score, no hard limits
 
-Model hosting: Hugging Face Hub (set HF_REPO_ID env var on Render)
+Model hosting: GitHub Releases (public, permanent, no auth needed)
 """
 from __future__ import annotations
-import os, io, hashlib, logging
+import os, io, hashlib, logging, urllib.request
 from pathlib import Path
 from typing import Optional
 import numpy as np
@@ -22,8 +22,8 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 # ── Model directory ───────────────────────────────────
-# On Render: /tmp/ml_models (ephemeral but downloaded at startup)
-# Locally:   backend/ml_models (persistent)
+# On Render: /tmp/ml_models (ephemeral — downloaded at every startup)
+# Locally:   backend/ml_models (persistent — already present)
 _IS_RENDER = os.getenv("APP_ENV") == "production" or os.getenv("RENDER") == "true"
 if _IS_RENDER:
     ML_DIR = Path("/tmp/ml_models")
@@ -32,50 +32,42 @@ else:
 
 ML_DIR.mkdir(parents=True, exist_ok=True)
 
-# Hugging Face repo — set HF_REPO_ID on Render
-# e.g. "rockyrahul4143/smartboq-models"
-HF_REPO_ID = os.getenv("HF_REPO_ID", "")
-
-MODELS_NEEDED = [
-    "ResNet50_model.h5",
-    "VGG16_model.h5",
-    "InceptionV3_model.h5",
-    "crack_model.h5",
-]
+# GitHub Release download URLs — public, no auth, permanent
+_GH_BASE = (
+    "https://github.com/rockyrahul4143-source/"
+    "SmartBOQ-Pro-Construction-Estimation-BOQ-and-AI-Inspection-System/"
+    "releases/download/ml-models-v1"
+)
+MODEL_URLS = {
+    "ResNet50_model.h5":    f"{_GH_BASE}/ResNet50_model.h5",
+    "VGG16_model.h5":       f"{_GH_BASE}/VGG16_model.h5",
+    "InceptionV3_model.h5": f"{_GH_BASE}/InceptionV3_model.h5",
+    "crack_model.h5":       f"{_GH_BASE}/crack_model.h5",
+}
 
 # ── Model cache ───────────────────────────────────────
 _models: dict = {}
 TF_AVAILABLE: bool = False
 
 
-# ── Download models from Hugging Face ────────────────
-def _download_models_from_hf() -> bool:
-    """Download missing models from HF Hub. Returns True if any downloaded."""
-    if not HF_REPO_ID:
-        logger.warning("HF_REPO_ID not set — skipping model download")
-        return False
-
-    missing = [m for m in MODELS_NEEDED if not (ML_DIR / m).exists()]
-    if not missing:
-        logger.info("All model files already present")
+# ── Download a single model file ─────────────────────
+def _download_model(fname: str) -> bool:
+    dest = ML_DIR / fname
+    if dest.exists():
         return True
-
+    url = MODEL_URLS.get(fname)
+    if not url:
+        return False
+    logger.info(f"Downloading {fname} from GitHub Releases...")
     try:
-        from huggingface_hub import hf_hub_download
-        logger.info(f"Downloading {len(missing)} model(s) from {HF_REPO_ID}...")
-        for fname in missing:
-            logger.info(f"  Downloading {fname}...")
-            local_path = hf_hub_download(
-                repo_id=HF_REPO_ID,
-                filename=fname,
-                local_dir=str(ML_DIR),
-                repo_type="model",
-            )
-            logger.info(f"  Saved to {local_path}")
-        logger.info("All models downloaded successfully")
+        urllib.request.urlretrieve(url, str(dest))
+        size_mb = dest.stat().st_size / 1_048_576
+        logger.info(f"Downloaded {fname} ({size_mb:.1f} MB)")
         return True
     except Exception as e:
-        logger.error(f"Failed to download models from HF: {e}")
+        logger.error(f"Failed to download {fname}: {e}")
+        if dest.exists():
+            dest.unlink()
         return False
 
 # ── Model cache ───────────────────────────────────────
@@ -88,6 +80,9 @@ def _load_model(key: str, h5_path: Path):
     global TF_AVAILABLE
     if key in _models:
         return _models[key]
+    # Download from GitHub Releases if not present
+    if not h5_path.exists() and _IS_RENDER:
+        _download_model(h5_path.name)
     if not h5_path.exists():
         logger.warning(f"Not found: {h5_path}")
         return None
@@ -114,9 +109,11 @@ def preload_all_models() -> None:
         logger.warning("TensorFlow not available — AI inspection disabled")
         return
 
-    # Download models from HF if running on Render and files are missing
-    if _IS_RENDER or HF_REPO_ID:
-        _download_models_from_hf()
+    # On Render: download all models upfront before loading
+    if _IS_RENDER:
+        logger.info("Render environment detected — downloading model files...")
+        for fname in MODEL_URLS:
+            _download_model(fname)
 
     specs = [
         ("resnet50_crack",    ML_DIR / "ResNet50_model.h5"),
