@@ -52,23 +52,39 @@ TF_AVAILABLE: bool = False
 
 # ── Download a single model file ─────────────────────
 def _download_model(fname: str) -> bool:
+    """Download model from GitHub Releases. Retries 3 times. Returns True on success."""
     dest = ML_DIR / fname
-    if dest.exists():
+    if dest.exists() and dest.stat().st_size > 1_000_000:
+        logger.info(f"{fname} already present ({dest.stat().st_size/1_048_576:.1f} MB)")
         return True
+
     url = MODEL_URLS.get(fname)
     if not url:
+        logger.error(f"No download URL configured for {fname}")
         return False
-    logger.info(f"Downloading {fname} from GitHub Releases...")
-    try:
-        urllib.request.urlretrieve(url, str(dest))
-        size_mb = dest.stat().st_size / 1_048_576
-        logger.info(f"Downloaded {fname} ({size_mb:.1f} MB)")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to download {fname}: {e}")
-        if dest.exists():
-            dest.unlink()
-        return False
+
+    for attempt in range(1, 4):
+        logger.info(f"Downloading {fname} (attempt {attempt}/3)...")
+        try:
+            # Remove partial file if present
+            if dest.exists():
+                dest.unlink()
+            urllib.request.urlretrieve(url, str(dest))
+            size_mb = dest.stat().st_size / 1_048_576
+            if size_mb < 1.0:
+                raise ValueError(f"Downloaded file too small ({size_mb:.1f} MB) — likely corrupt")
+            logger.info(f"Downloaded {fname} ({size_mb:.1f} MB) ✓")
+            return True
+        except Exception as e:
+            logger.warning(f"Attempt {attempt} failed for {fname}: {e}")
+            if dest.exists():
+                dest.unlink()
+            if attempt < 3:
+                import time
+                time.sleep(2)
+
+    logger.error(f"All 3 attempts failed for {fname} — AI inspection will be unavailable")
+    return False
 
 # ── Model cache ───────────────────────────────────────
 _models: dict = {}
