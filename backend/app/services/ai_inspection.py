@@ -111,31 +111,44 @@ def _load(key: str, onnx_name: str):
 
 # ── Startup preload ───────────────────────────────────
 def preload_all_models() -> None:
+    """Called at server startup. Downloads models in a background thread so startup is fast."""
     global ONNX_AVAILABLE, TF_AVAILABLE
     try:
         import onnxruntime
         ONNX_AVAILABLE = True
+        TF_AVAILABLE   = True
         logger.info(f"ONNX Runtime {onnxruntime.__version__} ready")
     except ImportError:
         logger.warning("onnxruntime not installed — AI inspection disabled")
         return
 
     if _IS_RENDER:
-        logger.info("Downloading ONNX models from GitHub Releases...")
-        for fname in MODEL_URLS:
-            _download(fname)
-
-    specs = [
-        ("resnet50_crack",    "ResNet50_model.onnx"),
-        ("vgg16_crack",       "VGG16_model.onnx"),
-        ("inceptionv3_crack", "InceptionV3_model.onnx"),
-        ("mobilenetv2_road",  "crack_model.onnx"),
-    ]
-    for key, onnx_name in specs:
-        _load(key, onnx_name)
-    loaded = sum(1 for k in ["resnet50_crack","vgg16_crack","inceptionv3_crack","mobilenetv2_road"] if k in _sessions)
-    logger.info(f"Preloaded {loaded}/4 models")
-    TF_AVAILABLE = ONNX_AVAILABLE  # for API compat
+        # Download in background thread so server starts immediately
+        import threading
+        def _bg():
+            logger.info("Background: downloading ONNX models...")
+            for fname in MODEL_URLS:
+                _download(fname)
+            for key, onnx_name in [
+                ("resnet50_crack",    "ResNet50_model.onnx"),
+                ("vgg16_crack",       "VGG16_model.onnx"),
+                ("inceptionv3_crack", "InceptionV3_model.onnx"),
+                ("mobilenetv2_road",  "crack_model.onnx"),
+            ]:
+                _load(key, onnx_name)
+            loaded = len(_sessions)
+            logger.info(f"Background: preloaded {loaded}/4 models")
+        threading.Thread(target=_bg, daemon=True).start()
+    else:
+        # Local: load synchronously (files already present)
+        for key, onnx_name in [
+            ("resnet50_crack",    "ResNet50_model.onnx"),
+            ("vgg16_crack",       "VGG16_model.onnx"),
+            ("inceptionv3_crack", "InceptionV3_model.onnx"),
+            ("mobilenetv2_road",  "crack_model.onnx"),
+        ]:
+            _load(key, onnx_name)
+        logger.info(f"Preloaded {len(_sessions)}/4 models")
 
 
 def ensure_models_loaded() -> bool:
