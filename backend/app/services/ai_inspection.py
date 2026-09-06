@@ -138,6 +138,30 @@ def preload_all_models() -> None:
     TF_AVAILABLE = ONNX_AVAILABLE  # for API compat
 
 
+def ensure_models_loaded() -> bool:
+    """Called before each inspection — lazy load if startup download was missed."""
+    global ONNX_AVAILABLE, TF_AVAILABLE
+    if ONNX_AVAILABLE and len(_sessions) >= 3:
+        return True
+    try:
+        import onnxruntime
+        ONNX_AVAILABLE = True
+        TF_AVAILABLE   = True
+    except ImportError:
+        return False
+    for fname in MODEL_URLS:
+        _download(fname)
+    for key, onnx_name in [
+        ("resnet50_crack",    "ResNet50_model.onnx"),
+        ("vgg16_crack",       "VGG16_model.onnx"),
+        ("inceptionv3_crack", "InceptionV3_model.onnx"),
+        ("mobilenetv2_road",  "crack_model.onnx"),
+    ]:
+        if key not in _sessions:
+            _load(key, onnx_name)
+    return len(_sessions) > 0
+
+
 # ── Preprocessing ─────────────────────────────────────
 def _preprocess(image_bytes: bytes, size: tuple) -> np.ndarray:
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB").resize(size)
@@ -229,6 +253,7 @@ def _not_loaded(itype: str, filename: str, classes: list) -> dict:
 # ══════════════════════════════════════════════════════
 
 def inspect_concrete_crack(image_bytes: bytes) -> dict:
+    ensure_models_loaded()
     specs = [
         ("resnet50_crack",    "ResNet50_model.onnx",    (120, 120)),
         ("vgg16_crack",       "VGG16_model.onnx",       (120, 120)),
@@ -280,6 +305,7 @@ def inspect_surface_crack_ensemble(image_bytes: bytes) -> dict:
 
 
 def inspect_road_damage(image_bytes: bytes) -> dict:
+    ensure_models_loaded()
     sess = _load("mobilenetv2_road", "crack_model.onnx")
     if sess is None:
         return _not_loaded("road_damage", "crack_model.onnx",

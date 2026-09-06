@@ -206,6 +206,20 @@ async def building_safety(
     return {**result, "inspection_id": str(saved.id)}
 
 
+# ── Force model init ──────────────────────────────────
+@router.post("/init-models", summary="Force download and load ONNX models")
+def init_models(_: User = Depends(get_current_active_user)):
+    """Triggers model download from GitHub Releases and loads into memory."""
+    from app.services.ai_inspection import ensure_models_loaded, _sessions, ONNX_AVAILABLE
+    success = ensure_models_loaded()
+    return {
+        "success":        success,
+        "onnx_available": ONNX_AVAILABLE,
+        "models_loaded":  list(_sessions.keys()),
+        "count":          len(_sessions),
+    }
+
+
 # ── Model status ──────────────────────────────────────
 @router.get("/models/status", summary="Check which AI models are loaded")
 def model_status(_: User = Depends(get_current_active_user)):
