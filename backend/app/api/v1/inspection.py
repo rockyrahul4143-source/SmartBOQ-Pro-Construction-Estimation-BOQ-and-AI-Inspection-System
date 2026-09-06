@@ -209,16 +209,15 @@ async def building_safety(
 # ── Model status ──────────────────────────────────────
 @router.get("/models/status", summary="Check which AI models are loaded")
 def model_status(_: User = Depends(get_current_active_user)):
-    """Shows which model weight files are present and loaded."""
-    from pathlib import Path
-    from app.services.ai_inspection import _models, ML_DIR
+    """Shows which ONNX model files are present and loaded."""
+    from app.services.ai_inspection import _sessions, ML_DIR, ONNX_AVAILABLE
 
     model_files = {
-        "resnet50_crack":    "ResNet50_model.h5",
-        "vgg16_crack":       "VGG16_model.h5",
-        "inceptionv3_crack": "InceptionV3_model.h5",
-        "mobilenetv2_road":  "crack_model.h5",
-        "building_safety":   "efficientnetb7_safety.h5",
+        "resnet50_crack":    "ResNet50_model.onnx",
+        "vgg16_crack":       "VGG16_model.onnx",
+        "inceptionv3_crack": "InceptionV3_model.onnx",
+        "mobilenetv2_road":  "crack_model.onnx",
+        "building_safety":   "efficientnetb7_safety.onnx",
     }
 
     status_map = {}
@@ -227,19 +226,15 @@ def model_status(_: User = Depends(get_current_active_user)):
         status_map[key] = {
             "filename":    filename,
             "file_exists": path.exists(),
-            "loaded":      key in _models,
+            "loaded":      key in _sessions,
             "size_mb":     round(path.stat().st_size / 1_048_576, 1) if path.exists() else 0,
         }
     return {
         "ml_models_dir":        str(ML_DIR),
         "models":               status_map,
-        "tensorflow_available": _check_tf(),
+        "tensorflow_available": ONNX_AVAILABLE,
+        "onnx_available":       ONNX_AVAILABLE,
     }
-
-
-def _check_tf() -> bool:
-    from app.services.ai_inspection import TF_AVAILABLE
-    return TF_AVAILABLE
 
 
 # ── History ───────────────────────────────────────────

@@ -1,155 +1,157 @@
 """
 AI Visual Inspection Service
 ================================
-Models (consistent cache keys used everywhere):
-  resnet50_crack    -> ResNet50_model.h5    (120x120)
-  vgg16_crack       -> VGG16_model.h5       (120x120)
-  inceptionv3_crack -> InceptionV3_model.h5 (150x150)
-  mobilenetv2_road  -> crack_model.h5       (160x160)
+Uses ONNX Runtime instead of TensorFlow.
+- onnxruntime: ~6MB (vs TensorFlow 400MB+)
+- Works on Render free tier (512MB RAM)
+- Models downloaded from GitHub Releases at startup
+
+Models:
+  resnet50_crack    -> ResNet50_model.onnx    (120x120)
+  vgg16_crack       -> VGG16_model.onnx       (120x120)
+  inceptionv3_crack -> InceptionV3_model.onnx (150x150)
+  mobilenetv2_road  -> crack_model.onnx       (160x160)
 
 Currency: INR (Indian Rupees)
-Repair costs: dynamic — based on actual confidence score, no hard limits
-
-Model hosting: GitHub Releases (public, permanent, no auth needed)
 """
 from __future__ import annotations
-import os, io, hashlib, logging, urllib.request
+import os, io, hashlib, logging, urllib.request, time
 from pathlib import Path
-from typing import Optional
 import numpy as np
 from PIL import Image
 
 logger = logging.getLogger(__name__)
 
 # ── Model directory ───────────────────────────────────
-# On Render: /tmp/ml_models (ephemeral — downloaded at every startup)
-# Locally:   backend/ml_models (persistent — already present)
 _IS_RENDER = os.getenv("APP_ENV") == "production" or os.getenv("RENDER") == "true"
-if _IS_RENDER:
-    ML_DIR = Path("/tmp/ml_models")
-else:
-    ML_DIR = Path(__file__).parent.parent.parent / "ml_models"
-
+ML_DIR = Path("/tmp/ml_models") if _IS_RENDER else Path(__file__).parent.parent.parent / "ml_models"
 ML_DIR.mkdir(parents=True, exist_ok=True)
 
-# GitHub Release download URLs — public, no auth, permanent
-_GH_BASE = (
+# GitHub Releases — ONNX models (public, no auth)
+_GH = (
     "https://github.com/rockyrahul4143-source/"
     "SmartBOQ-Pro-Construction-Estimation-BOQ-and-AI-Inspection-System/"
-    "releases/download/ml-models-v1"
+    "releases/download/ml-models-v2-onnx"
 )
 MODEL_URLS = {
-    "ResNet50_model.h5":    f"{_GH_BASE}/ResNet50_model.h5",
-    "VGG16_model.h5":       f"{_GH_BASE}/VGG16_model.h5",
-    "InceptionV3_model.h5": f"{_GH_BASE}/InceptionV3_model.h5",
-    "crack_model.h5":       f"{_GH_BASE}/crack_model.h5",
+    "ResNet50_model.onnx":    f"{_GH}/ResNet50_model.onnx",
+    "VGG16_model.onnx":       f"{_GH}/VGG16_model.onnx",
+    "InceptionV3_model.onnx": f"{_GH}/InceptionV3_model.onnx",
+    "crack_model.onnx":       f"{_GH}/crack_model.onnx",
 }
 
-# ── Model cache ───────────────────────────────────────
-_models: dict = {}
-TF_AVAILABLE: bool = False
+# ── Session cache ─────────────────────────────────────
+_sessions: dict = {}
+ONNX_AVAILABLE: bool = False
+TF_AVAILABLE: bool = False  # kept for API compat
 
 
-# ── Download a single model file ─────────────────────
-def _download_model(fname: str) -> bool:
-    """Download model from GitHub Releases. Retries 3 times. Returns True on success."""
+# ── Download with retry ───────────────────────────────
+def _download(fname: str) -> bool:
     dest = ML_DIR / fname
     if dest.exists() and dest.stat().st_size > 1_000_000:
-        logger.info(f"{fname} already present ({dest.stat().st_size/1_048_576:.1f} MB)")
         return True
-
     url = MODEL_URLS.get(fname)
     if not url:
-        logger.error(f"No download URL configured for {fname}")
+        logger.error(f"No URL for {fname}")
         return False
-
     for attempt in range(1, 4):
         logger.info(f"Downloading {fname} (attempt {attempt}/3)...")
         try:
-            # Remove partial file if present
             if dest.exists():
                 dest.unlink()
             urllib.request.urlretrieve(url, str(dest))
-            size_mb = dest.stat().st_size / 1_048_576
-            if size_mb < 1.0:
-                raise ValueError(f"Downloaded file too small ({size_mb:.1f} MB) — likely corrupt")
-            logger.info(f"Downloaded {fname} ({size_mb:.1f} MB) ✓")
+            mb = dest.stat().st_size / 1_048_576
+            if mb < 1.0:
+                raise ValueError(f"Too small: {mb:.1f}MB")
+            logger.info(f"Downloaded {fname} ({mb:.1f}MB) ✓")
             return True
         except Exception as e:
-            logger.warning(f"Attempt {attempt} failed for {fname}: {e}")
+            logger.warning(f"Attempt {attempt} failed: {e}")
             if dest.exists():
                 dest.unlink()
             if attempt < 3:
-                import time
-                time.sleep(2)
-
-    logger.error(f"All 3 attempts failed for {fname} — AI inspection will be unavailable")
+                time.sleep(3)
+    logger.error(f"All attempts failed for {fname}")
     return False
 
-# ── Model cache ───────────────────────────────────────
-_models: dict = {}
-TF_AVAILABLE: bool = False
 
-
-# ── Load one Keras model ──────────────────────────────
-def _load_model(key: str, h5_path: Path):
-    global TF_AVAILABLE
-    if key in _models:
-        return _models[key]
-    # Download from GitHub Releases if not present
-    if not h5_path.exists() and _IS_RENDER:
-        _download_model(h5_path.name)
-    if not h5_path.exists():
-        logger.warning(f"Not found: {h5_path}")
+# ── Load ONNX session ─────────────────────────────────
+def _load(key: str, onnx_name: str):
+    global ONNX_AVAILABLE
+    if key in _sessions:
+        return _sessions[key]
+    path = ML_DIR / onnx_name
+    # Try local .onnx first, then download
+    if not path.exists() and _IS_RENDER:
+        _download(onnx_name)
+    # Fallback: try local .h5 → already converted locally
+    if not path.exists():
+        h5_path = ML_DIR / onnx_name.replace(".onnx", ".h5")
+        if not h5_path.exists():
+            logger.warning(f"Not found: {path}")
+            return None
+        logger.warning(f"ONNX not found, h5 present but TF not available on Render")
         return None
     try:
-        import tensorflow as tf
-        TF_AVAILABLE = True
-        model = tf.keras.models.load_model(str(h5_path))
-        _models[key] = model
-        logger.info(f"Loaded [{key}] from {h5_path.name}")
-        return model
+        import onnxruntime as ort
+        ONNX_AVAILABLE = True
+        opts = ort.SessionOptions()
+        opts.inter_op_num_threads = 1
+        opts.intra_op_num_threads = 1
+        opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        sess = ort.InferenceSession(str(path), sess_options=opts, providers=["CPUExecutionProvider"])
+        _sessions[key] = sess
+        logger.info(f"Loaded [{key}] from {onnx_name}")
+        return sess
     except Exception as e:
-        logger.error(f"Failed [{key}]: {e}")
+        logger.error(f"Failed to load {key}: {e}")
         return None
 
 
 # ── Startup preload ───────────────────────────────────
 def preload_all_models() -> None:
-    global TF_AVAILABLE
+    global ONNX_AVAILABLE, TF_AVAILABLE
     try:
-        import tensorflow as tf
-        TF_AVAILABLE = True
-        logger.info(f"TensorFlow {tf.__version__} ready")
+        import onnxruntime
+        ONNX_AVAILABLE = True
+        logger.info(f"ONNX Runtime {onnxruntime.__version__} ready")
     except ImportError:
-        logger.warning("TensorFlow not available — AI inspection disabled")
+        logger.warning("onnxruntime not installed — AI inspection disabled")
         return
 
-    # On Render: download all models upfront before loading
     if _IS_RENDER:
-        logger.info("Render environment detected — downloading model files...")
+        logger.info("Downloading ONNX models from GitHub Releases...")
         for fname in MODEL_URLS:
-            _download_model(fname)
+            _download(fname)
 
     specs = [
-        ("resnet50_crack",    ML_DIR / "ResNet50_model.h5"),
-        ("vgg16_crack",       ML_DIR / "VGG16_model.h5"),
-        ("inceptionv3_crack", ML_DIR / "InceptionV3_model.h5"),
-        ("mobilenetv2_road",  ML_DIR / "crack_model.h5"),
+        ("resnet50_crack",    "ResNet50_model.onnx"),
+        ("vgg16_crack",       "VGG16_model.onnx"),
+        ("inceptionv3_crack", "InceptionV3_model.onnx"),
+        ("mobilenetv2_road",  "crack_model.onnx"),
     ]
-    for key, path in specs:
-        _load_model(key, path)
-    logger.info(f"Preloaded {len(_models)}/4 models")
+    for key, onnx_name in specs:
+        _load(key, onnx_name)
+    loaded = sum(1 for k in ["resnet50_crack","vgg16_crack","inceptionv3_crack","mobilenetv2_road"] if k in _sessions)
+    logger.info(f"Preloaded {loaded}/4 models")
+    TF_AVAILABLE = ONNX_AVAILABLE  # for API compat
 
 
-# ── Image preprocessing ───────────────────────────────
+# ── Preprocessing ─────────────────────────────────────
 def _preprocess(image_bytes: bytes, size: tuple) -> np.ndarray:
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB").resize(size)
     arr = np.array(img, dtype=np.float32) / 255.0
     return np.expand_dims(arr, axis=0)
 
 
-# ── Severity from probability ─────────────────────────
+def _predict(sess, img_arr: np.ndarray) -> float:
+    inp_name = sess.get_inputs()[0].name
+    result   = sess.run(None, {inp_name: img_arr})
+    return float(result[0][0][0])
+
+
+# ── Severity ──────────────────────────────────────────
 def _severity(prob: float, detected: bool):
     if not detected:
         return "none", 0.0
@@ -160,45 +162,26 @@ def _severity(prob: float, detected: bool):
     return "critical", s
 
 
-# ── Dynamic repair cost (INR) — scales with confidence ─
-# No fixed limits. Cost reflects actual damage probability.
-# Sources: CPWD DSR 2024, MoRTH schedule, Delhi PWD 2024
+# ── Repair cost (INR, CPWD DSR 2024) ─────────────────
 def _repair_cost_inr(itype: str, confidence: float, detected: bool):
     if not detected or confidence < 0.5:
         return 0, 0
-
-    s = confidence * 100  # percentage
-
+    s = confidence * 100
     if itype in ("concrete_crack", "surface_crack"):
-        # Epoxy injection ₹200-800/m, polymer mortar ₹1200/m², structural ₹2500/m²
-        if s < 55:   return 1_000,    6_000       # very early hairline
-        elif s < 60: return 3_000,    12_000      # hairline crack — sealant
-        elif s < 65: return 6_000,    20_000      # fine crack — epoxy primer
-        elif s < 70: return 10_000,   35_000      # visible crack — epoxy injection
-        elif s < 75: return 18_000,   55_000      # moderate — polymer mortar
-        elif s < 80: return 30_000,   90_000      # structural crack — repair mortar
-        elif s < 85: return 50_000,   1_50_000    # serious — engineer + repair
-        elif s < 90: return 80_000,   2_50_000    # major — structural work
-        elif s < 95: return 1_50_000, 4_50_000    # critical — full intervention
-        else:        return 2_50_000, 10_00_000   # severe — rebuild section
-
+        if s < 60:   return 3_000,    12_000
+        elif s < 70: return 10_000,   35_000
+        elif s < 80: return 30_000,   90_000
+        elif s < 90: return 80_000,   2_50_000
+        else:        return 2_50_000, 10_00_000
     elif itype == "road_damage":
-        # Cold mix ₹180/m², hot mix ₹350/m², milling+resurfacing ₹800/m²
-        if s < 55:   return 1_500,    8_000
-        elif s < 60: return 4_000,    15_000      # minor surface wear
-        elif s < 65: return 8_000,    28_000      # early pothole — cold mix
-        elif s < 70: return 15_000,   50_000      # pothole — hot mix patch
-        elif s < 75: return 30_000,   90_000      # multiple potholes
-        elif s < 80: return 60_000,   2_00_000    # large pothole area
-        elif s < 85: return 1_00_000, 3_50_000    # extensive damage
-        elif s < 90: return 1_80_000, 6_00_000    # milling required
-        elif s < 95: return 3_00_000, 10_00_000   # resurfacing needed
-        else:        return 5_00_000, 20_00_000   # full reconstruction
-
+        if s < 60:   return 4_000,    15_000
+        elif s < 70: return 15_000,   50_000
+        elif s < 80: return 60_000,   2_00_000
+        elif s < 90: return 1_80_000, 6_00_000
+        else:        return 5_00_000, 20_00_000
     else:
-        # Building safety — general
-        if s < 60:   return 5_000,   25_000
-        elif s < 75: return 25_000,  1_00_000
+        if s < 60:   return 5_000,    25_000
+        elif s < 75: return 25_000,   1_00_000
         elif s < 90: return 1_00_000, 4_00_000
         else:        return 4_00_000, 15_00_000
 
@@ -206,25 +189,23 @@ def _repair_cost_inr(itype: str, confidence: float, detected: bool):
 # ── Recommendations ───────────────────────────────────
 _RECS = {
     "concrete_crack": {
-        "low":      ("Hairline cracks detected. Apply epoxy sealant or crack filler. Monitor monthly.", "soon"),
-        "moderate": ("Visible cracks found. Epoxy injection recommended. Structural assessment advised.", "soon"),
-        "high":     ("Significant structural cracks. Immediate engineer inspection required. Apply polymer mortar.", "immediate"),
-        "critical": ("CRITICAL: Major structural failure risk. Stop use. Emergency structural intervention required.", "immediate"),
+        "low":      ("Hairline cracks detected. Apply epoxy sealant. Monitor monthly.", "soon"),
+        "moderate": ("Visible cracks. Epoxy injection recommended. Structural assessment advised.", "soon"),
+        "high":     ("Significant structural cracks. Immediate engineer inspection required.", "immediate"),
+        "critical": ("CRITICAL: Major structural failure risk. Stop use. Emergency intervention required.", "immediate"),
     },
     "road_damage": {
-        "low":      ("Minor surface wear. Cold mix patching recommended. Schedule in routine maintenance.", "soon"),
-        "moderate": ("Pothole detected. Hot mix patching required. Mark for traffic safety.", "soon"),
-        "high":     ("Severe potholes. Immediate hot mix patching. Risk of vehicle damage and accidents.", "immediate"),
-        "critical": ("Dangerous road condition. Close section immediately. Full milling and resurfacing required.", "immediate"),
+        "low":      ("Minor surface wear. Cold mix patching recommended.", "soon"),
+        "moderate": ("Pothole detected. Hot mix patching required.", "soon"),
+        "high":     ("Severe potholes. Immediate patching required. Risk of vehicle damage.", "immediate"),
+        "critical": ("Dangerous road condition. Close section. Full resurfacing required.", "immediate"),
     },
 }
 
 def _recommendation(itype: str, severity: str, detected: bool):
     if not detected or severity == "none":
         return "No defects detected. Routine inspection recommended in 6 months.", "monitor"
-    text, urgency = _RECS.get(itype, {}).get(
-        severity, ("Defect detected. Professional assessment required.", "soon")
-    )
+    text, urgency = _RECS.get(itype, {}).get(severity, ("Defect detected. Professional assessment required.", "soon"))
     return text, urgency
 
 
@@ -248,23 +229,22 @@ def _not_loaded(itype: str, filename: str, classes: list) -> dict:
 # ══════════════════════════════════════════════════════
 
 def inspect_concrete_crack(image_bytes: bytes) -> dict:
-    """Ensemble: ResNet50 + VGG16 + InceptionV3."""
     specs = [
-        ("resnet50_crack",    ML_DIR / "ResNet50_model.h5",    (120, 120)),
-        ("vgg16_crack",       ML_DIR / "VGG16_model.h5",       (120, 120)),
-        ("inceptionv3_crack", ML_DIR / "InceptionV3_model.h5", (150, 150)),
+        ("resnet50_crack",    "ResNet50_model.onnx",    (120, 120)),
+        ("vgg16_crack",       "VGG16_model.onnx",       (120, 120)),
+        ("inceptionv3_crack", "InceptionV3_model.onnx", (150, 150)),
     ]
     preds, names = [], []
-    for key, path, size in specs:
-        m = _load_model(key, path)
-        if m:
-            prob = float(m.predict(_preprocess(image_bytes, size), verbose=0)[0][0])
+    for key, onnx_name, size in specs:
+        sess = _load(key, onnx_name)
+        if sess:
+            prob = _predict(sess, _preprocess(image_bytes, size))
             preds.append(prob)
             names.append(key.split("_")[0].upper())
 
     if not preds:
         return _not_loaded("concrete_crack",
-                           "ResNet50_model.h5 / VGG16_model.h5 / InceptionV3_model.h5",
+                           "ResNet50_model.onnx / VGG16_model.onnx / InceptionV3_model.onnx",
                            ["No Crack", "Crack Detected"])
 
     avg  = float(np.mean(preds))
@@ -274,17 +254,17 @@ def inspect_concrete_crack(image_bytes: bytes) -> dict:
     cmin, cmax = _repair_cost_inr("concrete_crack", avg, det)
 
     return {
-        "inspection_type":            "concrete_crack",
-        "model_name":                 f"Ensemble ({', '.join(names)})",
-        "predicted_class":            "Crack Detected" if det else "No Crack",
-        "confidence":                 round(avg, 4),
-        "severity":                   sev,
-        "severity_score":             round(score, 1),
-        "recommendation":             rec,
-        "repair_urgency":             urg,
-        "estimated_repair_cost_min":  cmin,
-        "estimated_repair_cost_max":  cmax,
-        "currency":                   "INR",
+        "inspection_type":           "concrete_crack",
+        "model_name":                f"Ensemble ONNX ({', '.join(names)})",
+        "predicted_class":           "Crack Detected" if det else "No Crack",
+        "confidence":                round(avg, 4),
+        "severity":                  sev,
+        "severity_score":            round(score, 1),
+        "recommendation":            rec,
+        "repair_urgency":            urg,
+        "estimated_repair_cost_min": cmin,
+        "estimated_repair_cost_max": cmax,
+        "currency":                  "INR",
         "class_probabilities": {
             "No Crack":       round(1 - avg, 4),
             "Crack Detected": round(avg, 4),
@@ -294,42 +274,39 @@ def inspect_concrete_crack(image_bytes: bytes) -> dict:
 
 
 def inspect_surface_crack_ensemble(image_bytes: bytes) -> dict:
-    """Same ensemble as concrete crack."""
     r = inspect_concrete_crack(image_bytes)
     r["inspection_type"] = "surface_crack"
     return r
 
 
 def inspect_road_damage(image_bytes: bytes) -> dict:
-    """MobileNetV2 pothole detector — crack_model.h5."""
-    m = _load_model("mobilenetv2_road", ML_DIR / "crack_model.h5")
-    if m is None:
-        return _not_loaded("road_damage", "crack_model.h5",
+    sess = _load("mobilenetv2_road", "crack_model.onnx")
+    if sess is None:
+        return _not_loaded("road_damage", "crack_model.onnx",
                            ["NEGATIVE (Clean Road)", "POSITIVE (Pothole)"])
 
-    prob = float(m.predict(_preprocess(image_bytes, (160, 160)), verbose=0)[0][0])
+    prob = _predict(sess, _preprocess(image_bytes, (160, 160)))
     det  = prob > 0.5
     sev, score = _severity(prob, det)
     if det and sev == "low":
-        sev = "moderate"  # potholes always at least moderate
+        sev = "moderate"
     rec, urg   = _recommendation("road_damage", sev, det)
     cmin, cmax = _repair_cost_inr("road_damage", prob, det)
 
     return {
-        "inspection_type":            "road_damage",
-        "model_name":                 "MobileNetV2 (crack_model.h5)",
-        "predicted_class":            "POSITIVE (Pothole)" if det else "NEGATIVE (Clean Road)",
-        "confidence":                 round(prob, 4),
-        "severity":                   sev,
-        "severity_score":             round(score, 1),
-        "detections":                 [{"class": "pothole", "confidence": round(prob, 4)}] if det else [],
-        "total_defects":              1 if det else 0,
-        "worst_defect":               "pothole" if det else "none",
-        "recommendation":             rec,
-        "repair_urgency":             urg,
-        "estimated_repair_cost_min":  cmin,
-        "estimated_repair_cost_max":  cmax,
-        "currency":                   "INR",
+        "inspection_type":           "road_damage",
+        "model_name":                "MobileNetV2 ONNX (crack_model.onnx)",
+        "predicted_class":           "POSITIVE (Pothole)" if det else "NEGATIVE (Clean Road)",
+        "confidence":                round(prob, 4),
+        "severity":                  sev,
+        "severity_score":            round(score, 1),
+        "detections":                [{"class": "pothole", "confidence": round(prob, 4)}] if det else [],
+        "total_defects":             1 if det else 0,
+        "recommendation":            rec,
+        "repair_urgency":            urg,
+        "estimated_repair_cost_min": cmin,
+        "estimated_repair_cost_max": cmax,
+        "currency":                  "INR",
         "class_probabilities": {
             "NEGATIVE (Clean Road)": round(1 - prob, 4),
             "POSITIVE (Pothole)":    round(prob, 4),
@@ -338,19 +315,17 @@ def inspect_road_damage(image_bytes: bytes) -> dict:
 
 
 def inspect_building_safety(image_bytes: bytes) -> dict:
-    """EfficientNetB7 — not yet trained."""
     return _not_loaded(
-        "building_safety", "efficientnetb7_safety.h5",
+        "building_safety", "efficientnetb7_safety.onnx",
         ["Safe", "Minor Damage", "Moderate Damage", "Severe Damage"],
     )
 
 
 # ── Save uploaded image ───────────────────────────────
-def save_inspection_image(image_bytes: bytes, itype: str,
-                          filename: str, upload_dir: str) -> str:
+def save_inspection_image(image_bytes: bytes, itype: str, filename: str, upload_dir: str) -> str:
     save_dir = os.path.join(upload_dir, "inspections")
     os.makedirs(save_dir, exist_ok=True)
-    h = hashlib.md5(image_bytes).hexdigest()[:8]
+    h    = hashlib.md5(image_bytes).hexdigest()[:8]
     path = os.path.join(save_dir, f"{itype}_{h}_{filename}")
     with open(path, "wb") as f:
         f.write(image_bytes)
