@@ -5,18 +5,23 @@ services:
     region: oregon
     plan: free
     rootDir: backend
-    buildCommand: pip install --upgrade pip && pip install --prefer-binary -r requirements-deploy.txt
+    buildCommand: pip install --upgrade pip && pip install --prefer-binary -r requirements.txt
     startCommand: python start_render.py
     healthCheckPath: /health
     envVars:
+      # ── DATABASE ──────────────────────────────────────────────────────────
+      # Set DATABASE_URL manually in Render Dashboard → Environment
+      # Get it from: https://console.neon.tech → your project → Connection string
+      # Format: postgresql://user:pass@host/dbname?sslmode=require
       - key: DATABASE_URL
-        fromDatabase:
-          name: smartboq-db
-          property: connectionString
+        sync: false   # must be set manually in Render dashboard
+      # ── AUTH ──────────────────────────────────────────────────────────────
       - key: SECRET_KEY
         generateValue: true
+      # ── CORS ──────────────────────────────────────────────────────────────
       - key: ALLOWED_ORIGINS
         value: "https://smart-boq-pro-construction-estimati.vercel.app"
+      # ── APP ───────────────────────────────────────────────────────────────
       - key: UPLOAD_DIR
         value: /tmp/uploads
       - key: APP_ENV
@@ -24,9 +29,5 @@ services:
       - key: DEBUG
         value: "false"
 
-databases:
-  - name: smartboq-db
-    databaseName: smartboq
-    user: smartboq_user
-    plan: free
-    region: oregon
+# Note: Render PostgreSQL database section removed.
+# Using Neon PostgreSQL (external) — set DATABASE_URL in Render dashboard manually.
