@@ -9,35 +9,29 @@ class Base(DeclarativeBase):
 
 is_sqlite = settings.DATABASE_URL.startswith("sqlite")
 
-# ── Build engine kwargs ───────────────────────────────
 if is_sqlite:
-    engine_kwargs = {
-        "connect_args": {"check_same_thread": False},
-    }
+    engine = create_engine(
+        settings.DATABASE_URL,
+        echo=False,
+        connect_args={"check_same_thread": False},
+    )
 else:
-    # PostgreSQL (Render, Neon, Supabase, etc.)
-    # Neon requires SSL — add sslmode=require if not already present
+    # PostgreSQL — add sslmode=require for Neon if missing
     db_url = settings.DATABASE_URL
     if "neon.tech" in db_url and "sslmode" not in db_url:
         sep = "&" if "?" in db_url else "?"
         db_url = db_url + sep + "sslmode=require"
-    # Override settings URL so engine uses the SSL-patched URL
-    settings.DATABASE_URL = db_url
+        settings.DATABASE_URL = db_url
 
-    engine_kwargs = {
-        "pool_pre_ping":  True,    # verify connection before use
-        "pool_size":      5,       # Neon free tier: max 10 connections
-        "max_overflow":   10,
-        "pool_recycle":   300,     # recycle connections every 5 min
-        "connect_args":   {"connect_timeout": 10},
-    }
-
-engine = create_engine(
-    settings.DATABASE_URL,
-    echo=False,
-    pool_pre_ping=True,
-    **engine_kwargs,
-)
+    engine = create_engine(
+        db_url,
+        echo=False,
+        pool_pre_ping=True,
+        pool_size=5,
+        max_overflow=10,
+        pool_recycle=300,
+        connect_args={"connect_timeout": 10},
+    )
 
 # Enable foreign keys for SQLite
 if is_sqlite:
