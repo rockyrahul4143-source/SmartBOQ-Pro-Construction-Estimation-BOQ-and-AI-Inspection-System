@@ -9,25 +9,17 @@ services:
     startCommand: python start_render.py
     healthCheckPath: /health
     envVars:
-      # ── DATABASE ──────────────────────────────────────────────────────────
-      # Set DATABASE_URL manually in Render Dashboard → Environment
-      # Get it from: https://console.neon.tech → your project → Connection string
-      # Format: postgresql://user:pass@host/dbname?sslmode=require
       - key: DATABASE_URL
-        sync: false   # must be set manually in Render dashboard
-      # ── AUTH ──────────────────────────────────────────────────────────────
+        sync: false
       - key: SECRET_KEY
         generateValue: true
-      # ── CORS ──────────────────────────────────────────────────────────────
       - key: ALLOWED_ORIGINS
         value: "https://smart-boq-pro-construction-estimati.vercel.app"
-      # ── APP ───────────────────────────────────────────────────────────────
       - key: UPLOAD_DIR
         value: /tmp/uploads
       - key: APP_ENV
         value: production
       - key: DEBUG
         value: "false"
-
-# Note: Render PostgreSQL database section removed.
-# Using Neon PostgreSQL (external) — set DATABASE_URL in Render dashboard manually.
+      - key: PYTHON_VERSION
+        value: "3.12.0"
