@@ -7,23 +7,29 @@ class Base(DeclarativeBase):
     pass
 
 
-is_sqlite = settings.DATABASE_URL.startswith("sqlite")
-
-if is_sqlite:
-    engine = create_engine(
-        settings.DATABASE_URL,
-        echo=False,
-        connect_args={"check_same_thread": False},
-    )
-else:
-    # PostgreSQL — add sslmode=require for Neon if missing
+def _build_engine():
+    """Build SQLAlchemy engine. Called once at startup."""
     db_url = settings.DATABASE_URL
+
+    if db_url.startswith("sqlite"):
+        return create_engine(
+            db_url,
+            echo=False,
+            connect_args={"check_same_thread": False},
+        )
+
+    # PostgreSQL — patch URL if needed
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+
     if "neon.tech" in db_url and "sslmode" not in db_url:
         sep = "&" if "?" in db_url else "?"
         db_url = db_url + sep + "sslmode=require"
-        settings.DATABASE_URL = db_url
 
-    engine = create_engine(
+    # Update the in-memory settings so alembic also sees the fixed URL
+    settings.DATABASE_URL = db_url
+
+    return create_engine(
         db_url,
         echo=False,
         pool_pre_ping=True,
@@ -33,6 +39,11 @@ else:
         connect_args={"connect_timeout": 10},
     )
 
+
+engine       = _build_engine()
+is_sqlite    = settings.DATABASE_URL.startswith("sqlite")
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
 # Enable foreign keys for SQLite
 if is_sqlite:
     @event.listens_for(engine, "connect")
@@ -40,8 +51,6 @@ if is_sqlite:
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 def get_db():
