@@ -4,7 +4,7 @@ import { useAuth } from '@/hooks/useAuth'
 import {
   LayoutDashboard, FolderOpen, Building2, Calculator, Package,
   FileText, BarChart3, Upload, Eye, LogOut, HardHat,
-  BookOpen, Ruler, TrendingUp, Receipt, X,
+  BookOpen, Ruler, TrendingUp, Receipt, X, ListChecks,
 } from 'lucide-react'
 
 const navItems = [
@@ -17,6 +17,7 @@ const navItems = [
   { to: '/boq',            icon: FileText,        label: 'BOQ',               group: 'civil' },
   { to: '/rate-analysis',  icon: TrendingUp,      label: 'Rate Analysis',     group: 'civil' },
   { to: '/billing',        icon: Receipt,         label: 'RA Billing',        group: 'civil' },
+  { to: '/bbs',            icon: ListChecks,      label: 'Bar Bending (BBS)', group: 'civil' },
   { to: '/materials',      icon: Package,         label: 'Materials',         group: 'other' },
   { to: '/analytics',      icon: BarChart3,       label: 'Analytics',         group: 'other' },
   { to: '/dxf',            icon: Upload,          label: 'DXF Import',        group: 'other' },

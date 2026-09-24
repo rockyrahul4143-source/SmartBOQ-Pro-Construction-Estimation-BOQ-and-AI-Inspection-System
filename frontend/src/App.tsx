@@ -24,6 +24,7 @@ const MeasurementPage    = lazy(() => import('@/pages/MeasurementPage'))
 const RateAnalysisPage   = lazy(() => import('@/pages/RateAnalysisPage'))
 const BillingPage        = lazy(() => import('@/pages/BillingPage'))
 const DrawingTakeoffPage = lazy(() => import('@/pages/DrawingTakeoffPage'))
+const BBSPage            = lazy(() => import('@/pages/BBSPage'))
 
 function Loader() {
   return (
@@ -69,6 +70,7 @@ export default function App() {
                   <Route path="/rate-analysis" element={<RateAnalysisPage />} />
                   <Route path="/billing"       element={<BillingPage />} />
                   <Route path="/drawing-takeoff" element={<DrawingTakeoffPage />} />
+                  <Route path="/bbs"           element={<BBSPage />} />
                   {/* Catch-all → dashboard */}
                   <Route path="*" element={<Navigate to="/dashboard" replace />} />
                 </Route>
