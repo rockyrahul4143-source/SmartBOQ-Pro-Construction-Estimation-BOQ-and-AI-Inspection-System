@@ -12,6 +12,7 @@ from app.models.measurement import MeasurementBook, MeasurementItem
 from app.models.rate_analysis import RateAnalysis, RateComponent
 from app.models.billing import RABill, RABillItem, BillStatus
 from app.models.bbs import BBSSheet, BBSBar
+from app.models.project_file import ProjectFile
 
 __all__ = [
     "User", "UserRole",
@@ -27,4 +28,5 @@ __all__ = [
     "RateAnalysis", "RateComponent",
     "RABill", "RABillItem", "BillStatus",
     "BBSSheet", "BBSBar",
+    "ProjectFile",
 ]

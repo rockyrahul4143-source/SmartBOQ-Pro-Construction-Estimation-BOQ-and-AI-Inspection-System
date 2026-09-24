@@ -13,7 +13,7 @@ from app.core.security import decode_token
 from app.api.v1 import (
     auth, users, projects, buildings, materials,
     estimates, boq, reports, analytics, dxf, inspection,
-    sor, measurement, rate_analysis, billing, drawing_takeoff, bbs,
+    sor, measurement, rate_analysis, billing, drawing_takeoff, bbs, project_files,
 )
 
 logger = logging.getLogger(__name__)
@@ -115,6 +115,7 @@ app.include_router(rate_analysis.router,    prefix=f"{P}/rate-analysis",   tags=
 app.include_router(billing.router,          prefix=f"{P}/billing",         tags=["RA Billing"])
 app.include_router(drawing_takeoff.router,  prefix=f"{P}/drawing-takeoff", tags=["Drawing Takeoff"])
 app.include_router(bbs.router,              prefix=f"{P}/bbs",             tags=["BBS / Bar Bending Schedule"])
+app.include_router(project_files.router,    prefix=f"{P}/project-files",   tags=["Project Files / BBS Drawings"])
 
 
 @app.get("/health", tags=["Health"])

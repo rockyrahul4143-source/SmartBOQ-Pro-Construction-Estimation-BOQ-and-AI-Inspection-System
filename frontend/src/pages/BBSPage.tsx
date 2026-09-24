@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { toast } from '@/hooks/useToast'
+import BBSFilesTab from './BBSFilesTab'
 
 // ── helpers ───────────────────────────────────────────
 const fmt = (n?: number | null, dec = 0) =>
@@ -45,7 +46,7 @@ export default function BBSPage() {
   const qc = useQueryClient()
   const [projectId,  setProjectId]  = useState('')
   const [sheetId,    setSheetId]    = useState('')
-  const [tab,        setTab]        = useState<'manual'|'auto'|'calc'>('manual')
+  const [tab,        setTab]        = useState<'files'|'manual'|'auto'|'calc'>('files')
   const [showNewSheet, setShowNewSheet] = useState(false)
   const [showAddBar,   setShowAddBar]   = useState(false)
   const [barForm, setBarForm] = useState<any>({...DEFAULT_BAR})
@@ -178,11 +179,11 @@ export default function BBSPage() {
           <h2 className="text-lg font-bold">Bar Bending Schedule (BBS)</h2>
         </div>
         <div className="flex gap-2">
-          {['manual','auto','calc'].map(t => (
+          {(['files','manual','auto','calc'] as const).map(t => (
             <Button key={t} size="sm"
               variant={tab === t ? 'default' : 'outline'}
-              onClick={() => setTab(t as any)}>
-              {t === 'manual' ? 'Manual BBS' : t === 'auto' ? 'Auto from Drawing' : 'Quick Calc'}
+              onClick={() => setTab(t)}>
+              {t === 'files' ? '📁 Drawings & Schedules' : t === 'manual' ? 'Manual BBS' : t === 'auto' ? 'Auto from Drawing' : 'Quick Calc'}
             </Button>
           ))}
         </div>
@@ -226,7 +227,11 @@ export default function BBSPage() {
       </Card>
 
       {/* New Sheet Form */}
-      {showNewSheet && (
+      {/* ── DRAWINGS & SCHEDULES TAB ──────────────────── */}
+      {tab === 'files' && projectId && <BBSFilesTab projectId={projectId} />}
+      {tab === 'files' && !projectId && (
+        <Card><CardContent className="py-12 text-center text-muted-foreground text-sm">Select a project first to upload files.</CardContent></Card>
+      )}      {showNewSheet && (
         <Card className="border-primary/30">
           <CardHeader className="pb-2"><CardTitle className="text-sm">Create New BBS Sheet</CardTitle></CardHeader>
           <CardContent>
