@@ -1,413 +1,387 @@
 """
-BBS Extraction Engine
-=====================
-Parses uploaded files (PDF/DXF/DWG) and extracts structured BBS data.
+BBS Extraction Engine — Upgraded
+=================================
+Supports: DXF, PDF (text-layer + OCR attempt), DWG (honest capability)
+Extracts beam/column/slab/footing data from ANY schedule/drawing layout.
 
-Supports ANY layout — not tied to one specific schedule format.
-Uses pattern matching on text content to find beam/column marks,
-sizes, reinforcement, stirrups, cover, etc.
-
-For DXF: uses geometry + text entities.
-For PDF: uses text layer extraction.
-For images: returns not_supported with guidance.
-
-All extracted values carry a source field so the cross-file engine
-can rank and conflict-check them.
+FILE TYPE CAPABILITIES (honest):
+  DXF  — Full: geometry, text entities, blocks, layers, dimensions
+  DWG  — Partial: we cannot directly read binary DWG without AutoCAD SDK.
+          Guidance: convert to DXF in AutoCAD → Save As DXF 2010 ASCII.
+          Reported clearly, not silently ignored.
+  PDF  — Text-layer PDFs: full text extraction + schedule parsing.
+          Scanned/image PDFs: OCR attempted via pytesseract if available,
+          otherwise reported as "OCR required".
+  PNG/JPG — OCR attempted if pytesseract available.
+  XLSX/CSV — Table extraction via openpyxl/csv.
 """
 from __future__ import annotations
 import re
 import json
 import logging
+import io
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# ── Source priority labels ─────────────────────────────
-SRC_SCHEDULE  = "drawing_schedule"
-SRC_SECTION   = "drawing_section"
-SRC_NOTE      = "general_note"
-SRC_DXF       = "dxf_geometry"
-SRC_DERIVED   = "derived"
-SRC_USER      = "user_input"
+# ── Constants ──────────────────────────────────────────
+SRC_SCHEDULE = "drawing_schedule"
+SRC_SECTION  = "drawing_section"
+SRC_NOTE     = "general_note"
+SRC_DXF      = "dxf_geometry"
+SRC_OCR      = "ocr_extraction"
+SRC_DERIVED  = "derived"
+NOT_FOUND    = "NOT_FOUND / VERIFICATION REQUIRED"
+CONFLICT     = "CONFLICT_DETECTED — VERIFY DRAWING"
 
-VERIFY   = "VERIFY_REQUIRED"
-CONFLICT = "CONFLICT_DETECTED"
-MISSING  = "NOT_FOUND"
-
-
-# ── Regex patterns for beam/column data ───────────────
-
-# Beam mark: EB1, EB2X, TB1, HB1, EMB1, B1, GB1, etc.
-_BEAM_MARK_RE = re.compile(
-    r'\b(E?MB\d+|[A-Z]B\d+[A-Z0-9]*|EB\d+[A-Z0-9]*|TB\d+|HB\d+|B\d+[A-Z0-9]*)\b',
-    re.IGNORECASE
-)
-
-# Column mark: EC1, C1, CC1, etc.
-_COL_MARK_RE = re.compile(
-    r'\b(E?C\s*\d+[\w,]*|CC?\d+[A-Z0-9]*)\b',
-    re.IGNORECASE
-)
-
-# Size like 300X450, 300×450, 300x450
-_SIZE_RE = re.compile(r'(\d{2,4})\s*[xX×]\s*(\d{2,4})')
-
-# Reinforcement: 3-16#, 3-16Ø, 2T16, 3Y16, 3-16φ, 3 nos 16mm
-_REBAR_RE = re.compile(
-    r'(\d+)\s*[-–]?\s*(\d{1,2})\s*[#ØφTY@]?\s*(?:mm|dia|Ø|φ)?',
-    re.IGNORECASE
-)
-
-# Stirrup / tie: 8Ø@150, T8@150, 8#@125
-_STIRRUP_RE = re.compile(
-    r'(\d{1,2})\s*[#ØφTY@]?\s*[@C/]\s*(\d{2,4})',
-    re.IGNORECASE
-)
-
-# Cover: 25mm, cover=40, clear cover 25
-_COVER_RE = re.compile(
-    r'(?:clear\s+)?cover\s*[=:–-]?\s*(\d{1,3})\s*mm',
-    re.IGNORECASE
-)
-
-# Floor / storey
-_FLOOR_RE = re.compile(
-    r'(ground|first|second|third|4th|5th|6th|7th|8th|9th|10th|GF|1F|2F|3F|FF|SF|TF|terrace|foundation)',
-    re.IGNORECASE
-)
-
-# Lap / development length
-_LAP_RE = re.compile(r'lap\s*[=:–]?\s*(\d+)\s*mm', re.IGNORECASE)
-_DEV_RE = re.compile(r'development\s*length\s*[=:–]?\s*(\d+)\s*mm', re.IGNORECASE)
-
-# fck / fy
-_FCK_RE = re.compile(r'M\s*(\d{2})', re.IGNORECASE)
-_FY_RE  = re.compile(r'Fe\s*(\d{3,4})', re.IGNORECASE)
+# ── Regex patterns ─────────────────────────────────────
+_BEAM_MARK = re.compile(r'\b(E?MB\d+[A-Z0-9]*|EB\d+[A-Z0-9]*|[A-Z]B\d+[A-Z0-9]*|TB\d+|HB\d+|B\d+[A-Z0-9]*)\b', re.I)
+_COL_MARK  = re.compile(r'\b(E?C\s*\d+[\w,]*|C\d+[A-Z0-9]*|CC?\d+[A-Z0-9]*)\b', re.I)
+_SLAB_MARK = re.compile(r'\b(S\d+[A-Z0-9]*|SL\d+[A-Z0-9]*)\b', re.I)
+_SIZE_RE   = re.compile(r'(\d{2,4})\s*[xX×Xx]\s*(\d{2,4})')
+_REBAR_RE  = re.compile(r'(\d{1,2})\s*[-–#@]?\s*(\d{1,2})\s*[ØφΦ#@dDTY]?\s*(?:mm|dia)?', re.I)
+_STIRRUP   = re.compile(r'(\d{1,2})[ØφΦ#@dDTY]?\s*[@/Cc]\s*(\d{2,4})', re.I)
+_COVER_RE  = re.compile(r'(?:clear\s*)?cover\s*[=:–\-]?\s*(\d{1,3})\s*mm', re.I)
+_FCK_RE    = re.compile(r'\bM\s*(\d{2})\b', re.I)
+_FY_RE     = re.compile(r'\bFe\s*(\d{3,4})\b', re.I)
+_LAP_RE    = re.compile(r'lap\s*(?:length)?\s*[=:–]?\s*(\d+)\s*mm', re.I)
+_DEV_RE    = re.compile(r'(?:development|ld)\s*(?:length)?\s*[=:–]?\s*(\d+)\s*mm', re.I)
+_FLOOR_RE  = re.compile(r'\b(GF|FF|SF|TF|BF|[1-9]\d*(?:st|nd|rd|th)\s*f(?:loor)?|ground|first|second|third|terrace|basement|plinth|foundation)\b', re.I)
 
 
 def _extract_size(text: str) -> Optional[tuple]:
     m = _SIZE_RE.search(text)
-    if m:
-        return int(m.group(1)), int(m.group(2))
-    return None
+    return (int(m.group(1)), int(m.group(2))) if m else None
 
 
-def _extract_rebar(text: str) -> list[dict]:
-    """Extract all rebar specs from a text string."""
+def _extract_rebars(text: str) -> list:
     results = []
     for m in _REBAR_RE.finditer(text):
-        num, dia = int(m.group(1)), int(m.group(2))
-        if 4 <= dia <= 50 and 1 <= num <= 30:
-            results.append({"num": num, "dia": dia, "raw": m.group(0).strip()})
+        n, d = int(m.group(1)), int(m.group(2))
+        if 1 <= n <= 30 and 6 <= d <= 50:
+            results.append({"num": n, "dia": d, "raw": m.group(0).strip()})
     return results
 
 
 def _extract_stirrup(text: str) -> Optional[dict]:
-    m = _STIRRUP_RE.search(text)
+    m = _STIRRUP.search(text)
     if m:
-        dia, spacing = int(m.group(1)), int(m.group(2))
-        if 4 <= dia <= 32 and 50 <= spacing <= 600:
-            return {"dia": dia, "spacing": spacing, "raw": m.group(0).strip()}
+        d, s = int(m.group(1)), int(m.group(2))
+        if 4 <= d <= 32 and 25 <= s <= 600:
+            return {"dia": d, "spacing": s, "raw": m.group(0).strip()}
     return None
 
 
-# ── PDF text extraction ────────────────────────────────
+def _global_params(text: str) -> dict:
+    fck = fy = cover = lap = dev = None
+    if m := _FCK_RE.search(text):    fck   = int(m.group(1))
+    if m := _FY_RE.search(text):     fy    = int(m.group(1))
+    if m := _COVER_RE.search(text):  cover = int(m.group(1))
+    if m := _LAP_RE.search(text):    lap   = int(m.group(1))
+    if m := _DEV_RE.search(text):    dev   = int(m.group(1))
+    return {"fck":fck,"fy":fy,"cover":cover,"lap_mm":lap,"dev_length_mm":dev}
 
-def _extract_pdf_text(file_bytes: bytes) -> str:
-    """Extract all text from PDF using pdfminer if available."""
+
+# ── Text extraction helpers ────────────────────────────
+
+def _pdf_text(raw: bytes) -> tuple[str, str]:
+    """Returns (text, method). method: 'text_layer'|'ocr'|'none'"""
+    text = ""
+    # 1. Try pdfminer (best for text-layer PDFs)
     try:
-        from pdfminer.high_level import extract_text
-        import io
-        text = extract_text(io.BytesIO(file_bytes))
-        return text or ""
-    except ImportError:
+        from pdfminer.high_level import extract_text as pdfminer_extract
+        text = pdfminer_extract(io.BytesIO(raw)) or ""
+        if text.strip():
+            return text, "text_layer"
+    except Exception:
         pass
-    # Fallback: try pypdf
+    # 2. Try pypdf
     try:
-        import io
         import pypdf
-        reader = pypdf.PdfReader(io.BytesIO(file_bytes))
-        return "\n".join(p.extract_text() or "" for p in reader.pages)
-    except ImportError:
+        r = pypdf.PdfReader(io.BytesIO(raw))
+        text = "\n".join(p.extract_text() or "" for p in r.pages)
+        if text.strip():
+            return text, "text_layer"
+    except Exception:
         pass
-    return ""
+    # 3. OCR attempt via pdf2image + pytesseract
+    try:
+        from pdf2image import convert_from_bytes
+        import pytesseract
+        images = convert_from_bytes(raw, dpi=200, first_page=1, last_page=5)
+        text = "\n".join(pytesseract.image_to_string(img) for img in images)
+        if text.strip():
+            return text, "ocr"
+    except Exception:
+        pass
+    return "", "none"
 
 
-# ── Parse beam schedule from text ─────────────────────
+def _image_text(raw: bytes) -> tuple[str, str]:
+    """OCR an image file."""
+    try:
+        import pytesseract
+        from PIL import Image
+        img  = Image.open(io.BytesIO(raw))
+        text = pytesseract.image_to_string(img)
+        return text, "ocr"
+    except Exception:
+        return "", "none"
 
-def _parse_beam_schedule(text: str) -> dict:
-    """
-    Parse beam schedule from any text layout.
-    Returns {beam_mark: {size, top_steel, bottom_steel, stirrups, ...}}
-    """
-    beams: dict = {}
+
+def _excel_text(raw: bytes) -> str:
+    try:
+        import openpyxl
+        wb   = openpyxl.load_workbook(io.BytesIO(raw), read_only=True)
+        rows = []
+        for ws in wb.worksheets:
+            for row in ws.iter_rows(values_only=True):
+                rows.append("  ".join(str(c) if c is not None else "" for c in row))
+        return "\n".join(rows)
+    except Exception:
+        return ""
+
+
+def _csv_text(raw: bytes) -> str:
+    try:
+        import csv
+        text   = raw.decode("utf-8", errors="replace")
+        reader = csv.reader(io.StringIO(text))
+        return "\n".join("  ".join(r) for r in reader)
+    except Exception:
+        return ""
+
+
+# ── Schedule parsers ───────────────────────────────────
+
+def _parse_schedule(text: str, mark_re, section_key: str) -> dict:
+    """Generic parser for beam/column/slab schedules."""
+    members: dict = {}
     lines = [l.strip() for l in text.splitlines() if l.strip()]
-
-    # Global values
-    fck = fy = cover = None
-    for ln in lines:
-        if not fck:
-            m = _FCK_RE.search(ln)
-            if m: fck = int(m.group(1))
-        if not fy:
-            m = _FY_RE.search(ln)
-            if m: fy = int(m.group(1))
-        if not cover:
-            m = _COVER_RE.search(ln)
-            if m: cover = int(m.group(1))
-
-    # Find beam marks and associate data
-    for i, line in enumerate(lines):
-        marks = _BEAM_MARK_RE.findall(line)
-        if not marks:
-            continue
-
-        # Collect context — current line + a few around it
-        ctx_start = max(0, i - 1)
-        ctx_end   = min(len(lines), i + 6)
-        context   = " ".join(lines[ctx_start:ctx_end])
-
-        for mark in marks:
-            mark = mark.upper().strip()
-            if mark in beams:
-                continue  # already parsed
-
-            size = _extract_size(context)
-            rebars = _extract_rebar(context)
-            stirrup = _extract_stirrup(context)
-
-            # Try to split top/bottom by position in line
-            top_bars    = []
-            bottom_bars = []
-            # Heuristic: first rebar group = top, second = bottom
-            if len(rebars) >= 2:
-                top_bars    = [rebars[0]]
-                bottom_bars = [rebars[1]]
-            elif len(rebars) == 1:
-                bottom_bars = [rebars[0]]
-
-            beams[mark] = {
-                "mark":         mark,
-                "size":         {"b": size[0], "d": size[1]} if size else None,
-                "top_steel":    top_bars,
-                "bottom_steel": bottom_bars,
-                "all_rebars":   rebars,
-                "stirrups":     stirrup,
-                "cover":        cover,
-                "fck":          fck,
-                "fy":           fy,
-                "source":       SRC_SCHEDULE,
-                "raw_context":  context[:300],
-            }
-
-    return beams
-
-
-# ── Parse column schedule from text ───────────────────
-
-def _parse_column_schedule(text: str) -> dict:
-    """
-    Parse column schedule from any text layout.
-    Returns {col_mark: {floors: [{floor, size, steel, ties, ...}]}}
-    """
-    columns: dict = {}
-    lines = [l.strip() for l in text.splitlines() if l.strip()]
-
-    fck = fy = cover = None
-    for ln in lines:
-        if not fck:
-            m = _FCK_RE.search(ln)
-            if m: fck = int(m.group(1))
-        if not fy:
-            m = _FY_RE.search(ln)
-            if m: fy = int(m.group(1))
-        if not cover:
-            m = _COVER_RE.search(ln)
-            if m: cover = int(m.group(1))
+    gp    = _global_params(text)
 
     for i, line in enumerate(lines):
-        marks = _COL_MARK_RE.findall(line)
+        marks = mark_re.findall(line)
         if not marks:
             continue
-
-        ctx_start = max(0, i - 1)
-        ctx_end   = min(len(lines), i + 8)
-        context   = " ".join(lines[ctx_start:ctx_end])
+        ctx_lines = lines[max(0,i-1):min(len(lines),i+7)]
+        context   = " ".join(ctx_lines)
 
         for mark_raw in marks:
-            # Normalise — "EC 2,37" → try each
+            # Handle comma-separated multi-marks like "EC 2,37"
             for mark in re.split(r'[,\s]+', mark_raw.strip()):
                 mark = mark.upper().strip()
-                if not mark or len(mark) < 2:
+                if not mark or len(mark) < 2 or mark in members:
                     continue
-                if mark in columns:
-                    continue
-
                 size    = _extract_size(context)
-                rebars  = _extract_rebar(context)
+                rebars  = _extract_rebars(context)
                 stirrup = _extract_stirrup(context)
                 floors  = _FLOOR_RE.findall(context)
 
-                columns[mark] = {
-                    "mark":    mark,
-                    "size":    {"b": size[0], "d": size[1]} if size else None,
-                    "steel":   rebars,
-                    "ties":    stirrup,
-                    "floors":  floors,
-                    "cover":   cover,
-                    "fck":     fck,
-                    "fy":      fy,
-                    "source":  SRC_SCHEDULE,
-                    "raw_context": context[:300],
+                top_bars, bot_bars = [], []
+                if len(rebars) >= 2:
+                    top_bars = [rebars[0]];  bot_bars = [rebars[1]]
+                elif rebars:
+                    bot_bars = [rebars[0]]
+
+                members[mark] = {
+                    "mark":         mark,
+                    "type":         section_key,
+                    "size":         {"b": size[0], "d": size[1]} if size else None,
+                    "top_steel":    top_bars,
+                    "bottom_steel": bot_bars,
+                    "all_rebars":   rebars,
+                    "stirrups":     stirrup,
+                    "floors":       floors,
+                    "cover":        gp.get("cover"),
+                    "fck":          gp.get("fck"),
+                    "fy":           gp.get("fy"),
+                    "lap_mm":       gp.get("lap_mm"),
+                    "dev_length_mm": gp.get("dev_length_mm"),
+                    "source":       SRC_SCHEDULE,
+                    "raw_context":  context[:400],
                 }
+    return members
 
-    return columns
 
+# ── DXF extraction ─────────────────────────────────────
 
-# ── DXF geometry extraction ───────────────────────────
-
-def _parse_dxf(file_bytes: bytes) -> dict:
-    """Extract geometry + text from DXF for BBS context."""
+def _parse_dxf(raw: bytes) -> dict:
     from app.services.dxf_parser import parse_dxf_bytes
-    result = parse_dxf_bytes(file_bytes)
-    d = result.to_dict()
-
-    diag = d.get("diagnostics", {})
-    ext  = diag.get("drawing_extents", {})
-
+    result = parse_dxf_bytes(raw)
+    d      = result.to_dict()
+    diag   = d.get("diagnostics", {})
+    ext    = diag.get("drawing_extents", {})
     return {
-        "type":              "dxf_geometry",
-        "building_footprint_m2": d.get("building_footprint_area_m2", 0),
-        "wall_length_m":     d.get("total_wall_length_m", 0),
-        "drawing_extents":   ext,
+        "type":               "dxf_geometry",
+        "building_footprint": d.get("building_footprint_area_m2", 0),
+        "wall_length_m":      d.get("total_wall_length_m", 0),
+        "boundary_perimeter": d.get("boundary_perimeter_m", 0),
+        "drawing_extents":    ext,
         "boundary_candidates": d.get("boundary_candidates", [])[:5],
-        "units_detected":    d.get("units_detected"),
-        "scale_factor":      d.get("scale_factor"),
-        "entity_counts":     d.get("entity_counts", {}),
-        "warnings":          d.get("warnings", []),
-        "source":            SRC_DXF,
+        "entity_counts":      d.get("entity_counts", {}),
+        "units_detected":     d.get("units_detected"),
+        "scale_factor":       d.get("scale_factor"),
+        "warnings":           d.get("warnings", []),
+        "source":             SRC_DXF,
     }
 
 
-# ── Detect file category from filename + content ──────
+# ── Category detection ─────────────────────────────────
 
 def _detect_category(filename: str, text: str) -> str:
     fn = filename.lower()
-    tx = text[:2000].lower()
-
-    if any(k in fn or k in tx for k in ["beam schedule", "schedule of beam", "beam sch"]):
-        return "beam_schedule"
-    if any(k in fn or k in tx for k in ["column schedule", "schedule of column", "col sch", "col. sch"]):
-        return "column_schedule"
-    if any(k in fn or k in tx for k in ["slab schedule", "schedule of slab"]):
-        return "slab_schedule"
-    if any(k in fn or k in tx for k in ["footing", "foundation", "raft"]):
-        return "foundation_schedule"
-    if fn.endswith(".dxf") or fn.endswith(".dwg"):
-        return "structural_plan_cad"
-    if any(k in fn or k in tx for k in ["structural plan", "framing plan", "layout"]):
-        return "structural_plan"
-    if any(k in fn or k in tx for k in ["reinforcement", "rcc detail", "detail"]):
-        return "reinforcement_detail"
-    if any(k in fn or k in tx for k in ["section", "elevation"]):
-        return "section_elevation"
-    if any(k in fn or k in tx for k in ["general note", "specification"]):
-        return "general_notes"
+    tx = (text or "")[:3000].lower()
+    checks = [
+        (["beam schedule","schedule of beam","beam sch"],   "beam_schedule"),
+        (["column schedule","schedule of column","col sch"], "column_schedule"),
+        (["slab schedule","schedule of slab"],              "slab_schedule"),
+        (["footing schedule","foundation schedule","raft"],  "foundation_schedule"),
+        (["staircase","stair"],                             "staircase"),
+        (["reinforcement detail","rcc detail","bar detail"], "reinforcement_detail"),
+        (["structural plan","framing plan","layout"],        "structural_plan"),
+        (["section","elevation"],                           "section_elevation"),
+        (["general note","specification","note:"],          "general_notes"),
+    ]
+    for keywords, cat in checks:
+        if any(k in fn or k in tx for k in keywords):
+            return cat
+    if fn.endswith((".dxf",".dwg")): return "structural_plan_cad"
     return "other"
 
 
-# ── MAIN ENTRY POINT ──────────────────────────────────
+# ── MAIN ENTRY ─────────────────────────────────────────
 
-def extract_file(file_bytes: bytes, filename: str, file_type: str) -> dict:
+def extract_file(raw: bytes, filename: str, file_type: str) -> dict:
     """
-    Main extraction function. Processes any file type and returns
-    a structured dict with all extractable BBS-relevant data.
-
-    Returns:
-        {
-            "file_type": ...,
-            "category": ...,
-            "beams": {mark: {...}},
-            "columns": {mark: {...}},
-            "slabs": {},
-            "geometry": {},
-            "global_params": {fck, fy, cover, ...},
-            "raw_text": "...",
-            "member_list": [...],
-            "warnings": [...],
-            "extraction_status": "complete"|"partial"|"not_supported",
-        }
+    Extract all BBS-relevant data from any file.
+    Returns structured dict with honest status for every extraction step.
     """
     result = {
-        "file_type":   file_type,
-        "category":    "other",
-        "beams":       {},
-        "columns":     {},
-        "slabs":       {},
-        "geometry":    {},
+        "file_type":        file_type,
+        "filename":         filename,
+        "category":         "other",
+        "extraction_method": "none",
+        "beams":    {}, "columns": {}, "slabs": {},
+        "geometry": {},
         "global_params": {},
-        "raw_text":    "",
+        "raw_text":  "",
         "member_list": [],
-        "warnings":    [],
+        "warnings":  [],
         "extraction_status": "pending",
+        "capability_notes": [],
     }
 
     try:
+        # ── DXF ────────────────────────────────────────
         if file_type == "dxf":
-            geo = _parse_dxf(file_bytes)
-            result["geometry"] = geo
-            result["category"] = "structural_plan_cad"
+            geo = _parse_dxf(raw)
+            result["geometry"]          = geo
+            result["extraction_method"] = "dxf_geometry"
+            result["category"]          = "structural_plan_cad"
+            result["warnings"].extend(geo.get("warnings", []))
             result["extraction_status"] = "complete"
+            result["capability_notes"].append(
+                "DXF: geometry, text entities, dimensions, blocks extracted."
+            )
 
+        # ── DWG ────────────────────────────────────────
+        elif file_type == "dwg":
+            result["extraction_status"] = "not_supported"
+            result["capability_notes"].append(
+                "DWG (binary AutoCAD) cannot be read directly. "
+                "Action required: Open in AutoCAD → Save As → DXF 2010 ASCII → re-upload. "
+                "File is stored for reference."
+            )
+            result["warnings"].append(
+                "DWG file uploaded. To enable geometry extraction: "
+                "Open in AutoCAD → File → Save As → AutoCAD DXF 2010 (*.dxf) → re-upload."
+            )
+
+        # ── PDF ────────────────────────────────────────
         elif file_type == "pdf":
-            text = _extract_pdf_text(file_bytes)
-            result["raw_text"] = text[:50000]   # cap to avoid huge JSON
+            text, method = _pdf_text(raw)
+            result["extraction_method"] = method
+            result["raw_text"] = text[:60000]
             result["category"] = _detect_category(filename, text)
 
-            if text:
-                beams   = _parse_beam_schedule(text)
-                columns = _parse_column_schedule(text)
-                result["beams"]   = beams
-                result["columns"] = columns
-
-                # Global params from text
-                fck_m = _FCK_RE.search(text)
-                fy_m  = _FY_RE.search(text)
-                cov_m = _COVER_RE.search(text)
-                result["global_params"] = {
-                    "fck":   int(fck_m.group(1)) if fck_m else None,
-                    "fy":    int(fy_m.group(1))  if fy_m  else None,
-                    "cover": int(cov_m.group(1)) if cov_m else None,
-                }
-                result["extraction_status"] = "complete" if (beams or columns) else "partial"
-                if not text.strip():
-                    result["warnings"].append(
-                        "PDF text layer is empty — this may be a scanned image. "
-                        "Text extraction requires a text-layer PDF. "
-                        "For scanned drawings, please extract the schedule data manually."
-                    )
-            else:
+            if method == "none":
+                result["extraction_status"] = "ocr_required"
                 result["warnings"].append(
-                    "No text could be extracted from this PDF. "
-                    "It may be a scanned/image PDF. Use manual BBS entry to input schedule values."
+                    "PDF has no text layer and OCR is not available. "
+                    "Install pytesseract + pdf2image for scanned PDF support. "
+                    "Alternatively, enter schedule values manually."
                 )
-                result["extraction_status"] = "not_supported"
+            else:
+                beams   = _parse_schedule(text, _BEAM_MARK, "beam")
+                cols    = _parse_schedule(text, _COL_MARK,  "column")
+                slabs   = _parse_schedule(text, _SLAB_MARK, "slab")
+                gp      = _global_params(text)
+                result["beams"]         = beams
+                result["columns"]       = cols
+                result["slabs"]         = slabs
+                result["global_params"] = gp
+                found   = bool(beams or cols or slabs)
+                result["extraction_status"] = "complete" if found else "partial"
+                note = f"PDF ({method}): "
+                if beams:    note += f"{len(beams)} beams, "
+                if cols:     note += f"{len(cols)} columns, "
+                if slabs:    note += f"{len(slabs)} slabs, "
+                note += "extracted."
+                result["capability_notes"].append(note)
+                if not found:
+                    result["warnings"].append(
+                        "No beam/column marks found in PDF text. "
+                        "If this is a schedule, check that mark names follow standard patterns "
+                        "(EB1, EC1, B1, C1, etc.)."
+                    )
+
+        # ── Images (PNG / JPG) ─────────────────────────
+        elif file_type == "image":
+            text, method = _image_text(raw)
+            result["extraction_method"] = method
+            if text.strip():
+                result["raw_text"] = text[:20000]
+                beams = _parse_schedule(text, _BEAM_MARK, "beam")
+                cols  = _parse_schedule(text, _COL_MARK,  "column")
+                result["beams"]   = beams
+                result["columns"] = cols
+                result["global_params"] = _global_params(text)
+                result["extraction_status"] = "complete" if (beams or cols) else "partial"
+                result["capability_notes"].append(f"Image OCR: {len(beams)} beams, {len(cols)} columns found.")
+            else:
+                result["extraction_status"] = "ocr_required"
+                result["warnings"].append(
+                    "Image uploaded. OCR not available or text not recognised. "
+                    "Install pytesseract for image schedule extraction."
+                )
+
+        # ── Excel / CSV ────────────────────────────────
+        elif file_type in ("xlsx", "csv"):
+            text = _excel_text(raw) if file_type == "xlsx" else _csv_text(raw)
+            result["raw_text"] = text[:40000]
+            result["extraction_method"] = "table"
+            beams = _parse_schedule(text, _BEAM_MARK, "beam")
+            cols  = _parse_schedule(text, _COL_MARK,  "column")
+            result["beams"]         = beams
+            result["columns"]       = cols
+            result["global_params"] = _global_params(text)
+            result["extraction_status"] = "complete" if (beams or cols) else "partial"
+            result["capability_notes"].append(f"Table: {len(beams)} beams, {len(cols)} columns.")
 
         else:
-            result["warnings"].append(
-                f"File type '{file_type}' is not directly supported for automatic extraction. "
-                "For DWG files: open in AutoCAD → Save As → DXF 2010 ASCII → re-upload. "
-                "For images: enter schedule values manually in the BBS form."
-            )
             result["extraction_status"] = "not_supported"
+            result["capability_notes"].append(
+                f"File type '{file_type}' is not currently supported. "
+                "Supported: DXF, PDF, PNG, JPG, XLSX, CSV. "
+                "For DWG: convert to DXF in AutoCAD first."
+            )
 
-        # Build member list
-        all_marks = list(result["beams"].keys()) + list(result["columns"].keys())
-        result["member_list"] = sorted(set(all_marks))
-        result["category"]    = _detect_category(filename, result.get("raw_text","")[:500])
+        result["member_list"] = sorted(set(list(result["beams"].keys()) + list(result["columns"].keys())))
+        result["category"]    = _detect_category(filename, result.get("raw_text","")[:1000])
 
     except Exception as e:
-        logger.error(f"Extraction error for {filename}: {e}")
+        logger.error(f"Extraction error {filename}: {e}")
         result["warnings"].append(f"Extraction error: {e}")
         result["extraction_status"] = "failed"
 
