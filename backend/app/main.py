@@ -1,6 +1,8 @@
 import os
+import gc
 import time
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,12 +18,29 @@ from app.api.v1 import (
 
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup: verify DB, warm ONNX runtime (don't preload models — saves RAM)."""
+    logger.info("SmartBOQ starting up...")
+    # Just check onnxruntime is importable — don't load models yet
+    from app.services.ai_inspection import preload_all_models
+    preload_all_models()
+    # Force a GC pass after imports
+    gc.collect()
+    logger.info("Startup complete")
+    yield
+    # Shutdown
+    gc.collect()
+    logger.info("SmartBOQ shutdown")
+
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 # ── CORS ──────────────────────────────────────────────

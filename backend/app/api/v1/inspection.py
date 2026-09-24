@@ -32,7 +32,7 @@ from app.services.ai_inspection import (
 
 router = APIRouter()
 
-MAX_BYTES   = settings.MAX_FILE_SIZE_MB * 1024 * 1024
+MAX_BYTES   = min(settings.MAX_FILE_SIZE_MB, 10) * 1024 * 1024  # cap at 10 MB on production
 ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
@@ -126,11 +126,11 @@ async def concrete_crack(
     _validate_image(file)
     content = await file.read()
     if len(content) > MAX_BYTES:
-        raise HTTPException(status_code=413, detail="Image too large (max 50MB)")
-
+        raise HTTPException(status_code=413, detail="Image too large (max 10MB)")
     result  = inspect_concrete_crack(content)
     saved   = _persist(db, result, content, file.filename or "image.jpg",
                        InspectionType.CONCRETE_CRACK, project_id, current_user.id)
+    del content
     return {**result, "inspection_id": str(saved.id)}
 
 
@@ -150,10 +150,10 @@ async def surface_crack(
     content = await file.read()
     if len(content) > MAX_BYTES:
         raise HTTPException(status_code=413, detail="Image too large")
-
     result  = inspect_surface_crack_ensemble(content)
     saved   = _persist(db, result, content, file.filename or "image.jpg",
                        InspectionType.SURFACE_CRACK, project_id, current_user.id)
+    del content
     return {**result, "inspection_id": str(saved.id)}
 
 
@@ -175,10 +175,10 @@ async def road_damage(
     content = await file.read()
     if len(content) > MAX_BYTES:
         raise HTTPException(status_code=413, detail="Image too large")
-
     result  = inspect_road_damage(content)
     saved   = _persist(db, result, content, file.filename or "image.jpg",
                        InspectionType.ROAD_DAMAGE, project_id, current_user.id)
+    del content
     return {**result, "inspection_id": str(saved.id)}
 
 
@@ -199,10 +199,10 @@ async def building_safety(
     content = await file.read()
     if len(content) > MAX_BYTES:
         raise HTTPException(status_code=413, detail="Image too large")
-
     result  = inspect_building_safety(content)
     saved   = _persist(db, result, content, file.filename or "image.jpg",
                        InspectionType.BUILDING_SAFETY, project_id, current_user.id)
+    del content
     return {**result, "inspection_id": str(saved.id)}
 
 

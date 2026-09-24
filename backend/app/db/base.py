@@ -33,9 +33,10 @@ def _build_engine():
         db_url,
         echo=False,
         pool_pre_ping=True,
-        pool_size=5,
-        max_overflow=10,
+        pool_size=2,       # Neon free: max 10 connections, keep footprint small
+        max_overflow=3,    # max 5 total connections (was 15 — too many)
         pool_recycle=300,
+        pool_timeout=30,
         connect_args={"connect_timeout": 10},
     )
 

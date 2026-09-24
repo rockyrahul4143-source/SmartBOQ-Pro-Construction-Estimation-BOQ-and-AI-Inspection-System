@@ -97,6 +97,7 @@ uvicorn.run(
     "app.main:app",
     host="0.0.0.0",
     port=port,
+    workers=1,          # single worker — Render free tier has 512MB RAM
     log_level="info",
     reload=False,
 )
