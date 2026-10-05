@@ -121,7 +121,13 @@ app.include_router(project_files.router,    prefix=f"{P}/project-files",   tags=
 
 @app.get("/health", tags=["Health"])
 def health():
-    return {"status": "healthy", "app": settings.APP_NAME, "version": settings.APP_VERSION}
+    return {
+        "status": "healthy", 
+        "app": settings.APP_NAME, 
+        "version": settings.APP_VERSION,
+        "timestamp": "2025-01-02T15:30:00Z",  # Added timestamp to verify deployment
+        "commit": "f865d7f-import-fixes"
+    }
 
 
 @app.get("/", tags=["Root"])
