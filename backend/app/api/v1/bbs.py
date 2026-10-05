@@ -19,7 +19,7 @@ from app.models.bbs import BBSSheet, BBSBar
 from app.crud import project as project_crud
 from app.services.bbs_engine import (
     BeamBarInput, ColumnBarInput, StirrupInput,
-    calc_beam_main_bar, calc_column_main_bar, calc_stirrups,
+    calc_beam_bar, calc_column_bar, calc_stirrups,
     calc_slab_bar, diameter_summary, unit_weight_kg_per_m,
     development_length, lap_length,
     VERIFY, CONFLICT, MISSING,
@@ -205,7 +205,7 @@ def _recalc_bar(bar: BBSBar, sheet: BBSSheet) -> BBSBar:
                 fck=fck, fy=fy, bond_type=bt,
                 extra_length_mm=0.0, source=bar.source,
             )
-            res = calc_column_main_bar(inp, bar.bar_mark or "C")
+            res = calc_column_bar(inp, bar.bar_mark or "C")
             bar.cutting_length_mm    = res.cutting_length_mm
             bar.lap_mm               = res.lap_length_mm
             bar.total_length_mm      = res.total_length_mm
@@ -227,7 +227,7 @@ def _recalc_bar(bar: BBSBar, sheet: BBSSheet) -> BBSBar:
                 splice_required=bool(bar.lap_mm and bar.lap_mm > 0),
                 fck=fck, fy=fy, bond_type=bt, source=bar.source,
             )
-            res = calc_beam_main_bar(inp, bar.bar_mark or "B")
+            res = calc_beam_bar(inp, bar.bar_mark or "B")
             bar.cutting_length_mm    = res.cutting_length_mm
             bar.lap_mm               = res.lap_length_mm
             bar.total_length_mm      = res.total_length_mm
@@ -448,7 +448,7 @@ def calc_beam(req: BeamBarCalcReq, _: User = Depends(get_current_active_user)):
         hook_type=req.hook_type, splice_required=req.splice_required,
         fck=req.fck, fy=req.fy, bond_type=req.bond_type,
     )
-    r = calc_beam_main_bar(inp)
+    r = calc_beam_bar(inp)
     return r.__dict__
 
 
@@ -460,7 +460,7 @@ def calc_col(req: ColumnBarCalcReq, _: User = Depends(get_current_active_user)):
         cover_mm=req.cover_mm, lap_mm=req.lap_mm,
         fck=req.fck, fy=req.fy, extra_length_mm=req.extra_length_mm,
     )
-    r = calc_column_main_bar(inp)
+    r = calc_column_bar(inp)
     return r.__dict__
 
 

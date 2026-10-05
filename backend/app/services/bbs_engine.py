@@ -23,6 +23,7 @@ UNIT_WEIGHT: Dict[int, float] = {
 NOT_FOUND = "NOT_FOUND / VERIFICATION REQUIRED"
 CONFLICT  = "CONFLICT_DETECTED — VERIFY DRAWING"
 VERIFY    = "VERIFY_REQUIRED"
+MISSING   = "MISSING_INPUT"
 
 def unit_weight_kg_per_m(dia: int) -> float:
     return UNIT_WEIGHT.get(dia, round(dia**2 / 162.0, 3))
