@@ -47,16 +47,16 @@ def dashboard(
 
     # ── Status chart — FIXED: fresh query per status to avoid filter accumulation ──
     status_chart = []
-    for s in ProjectStatus:
+    for s in ["draft", "active", "on_hold", "completed", "archived"]:
         count = _base_query(db, current_user).filter(Project.status == s).count()
-        status_chart.append({"status": s.value, "count": count})
+        status_chart.append({"status": s, "count": count})
 
     # ── Building type chart ──
     type_chart = []
-    for bt in BuildingType:
+    for bt in ["residential", "commercial", "industrial", "institutional", "mixed_use"]:
         count = _base_query(db, current_user).filter(Project.building_type == bt).count()
         if count > 0:
-            type_chart.append({"type": bt.value, "count": count})
+            type_chart.append({"type": bt, "count": count})
 
     return {
         "kpis": {
@@ -72,7 +72,7 @@ def dashboard(
                 "project_code":   p.project_code,
                 "project_name":   p.project_name,
                 "client_name":    p.client_name,
-                "status":         p.status.value,
+                "status":         p.status,
                 "estimated_cost": p.total_estimated_cost or 0,
                 "updated_at":     p.updated_at.isoformat(),
             }
@@ -220,7 +220,7 @@ def cost_distribution(
 
     work_costs: dict = {}
     for e in estimates:
-        label = e.work_type.value.replace("_", " ").title() if hasattr(e.work_type, 'value') else str(e.work_type).replace("_", " ").title()
+        label = str(e.work_type).replace("_", " ").title()
         work_costs[label] = work_costs.get(label, 0) + (e.total_cost or 0)
 
     total = sum(work_costs.values())
@@ -258,7 +258,7 @@ def project_comparison(
             "project_id":        str(p.id),
             "project_code":      p.project_code,
             "project_name":      p.project_name,
-            "building_type":     p.building_type.value if hasattr(p.building_type, 'value') else str(p.building_type),
+            "building_type":     str(p.building_type),
             "num_floors":        p.num_floors,
             "total_area_m2":     p.total_built_up_area or 0,
             "estimated_cost":    p.total_estimated_cost or 0,
@@ -308,7 +308,7 @@ def quantity_comparison(
         .all()
     )
     return {
-        "work_type": work_type.value if hasattr(work_type, 'value') else str(work_type),
+        "work_type": str(work_type),
         "data": [
             {"project_code": r[0], "project_name": r[1], "quantity": round(r[2], 3), "unit": r[3]}
             for r in rows

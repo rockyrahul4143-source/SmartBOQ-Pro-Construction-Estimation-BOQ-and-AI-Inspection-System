@@ -125,8 +125,7 @@ async def upload_file(
         extraction_status=extracted.get("extraction_status","pending"),
         extracted_data=json.dumps(extracted),
         member_count=len(marks), member_list=",".join(marks),
-        extraction_notes="\n".join(extracted.get("warnings",[])),
-        capability_notes=cap,
+        extraction_notes="\n".join(extracted.get("warnings",[])) + (f"\nCapabilities: {cap}" if cap else ""),
         uploaded_by=str(current_user.id),
     )
     db.add(pf); db.commit(); db.refresh(pf)

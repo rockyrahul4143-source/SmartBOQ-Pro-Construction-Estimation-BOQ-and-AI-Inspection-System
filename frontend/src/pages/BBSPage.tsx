@@ -14,6 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge'
 import { toast } from '@/hooks/useToast'
 import BBSFilesTab from './BBSFilesTab'
+import ManualBeamBBS from '@/components/bbs/ManualBeamBBS'
+import ManualColumnBBS from '@/components/bbs/ManualColumnBBS'
 
 // ── helpers ───────────────────────────────────────────
 const fmt = (n?: number | null, dec = 0) =>
@@ -28,19 +30,6 @@ const statusBadge = (s: string) => {
 }
 
 const MEMBER_TYPES = ['beam','column','slab','footing']
-const BAR_SHAPES   = ['straight','stirrup_rect','stirrup_square','cranked','bent_up','custom']
-const HOOK_TYPES   = ['standard','90','135','180']
-
-// ── default bar form ──────────────────────────────────
-const DEFAULT_BAR = {
-  bar_mark: '', member_mark: '', position: '', floor_level: '',
-  dia_mm: 16, bar_shape: 'straight', num_bars: 2,
-  clear_span_mm: '', support_near_mm: 230, support_far_mm: 230,
-  section_b_mm: '', section_d_mm: '', cover_mm: 25, spacing_mm: '',
-  storey_height_mm: '', zone_length_mm: '',
-  has_hook_near: false, has_hook_far: false, hook_type: 'standard',
-  lap_mm: '', dev_length_mm: '', source: 'manual', remarks: '',
-}
 
 export default function BBSPage() {
   const qc = useQueryClient()
@@ -48,17 +37,14 @@ export default function BBSPage() {
   const [sheetId,    setSheetId]    = useState('')
   const [tab,        setTab]        = useState<'files'|'manual'|'auto'|'calc'>('files')
   const [showNewSheet, setShowNewSheet] = useState(false)
-  const [showAddBar,   setShowAddBar]   = useState(false)
-  const [barForm, setBarForm] = useState<any>({...DEFAULT_BAR})
-  const [editBarId, setEditBarId] = useState<string|null>(null)
-  const [newSheet, setNewSheet] = useState({ title:'', member_type:'beam', fck:20, fy:500, clear_cover:25, notes:'' })
+  const [summaryOpen, setSummaryOpen] = useState(false)
+  const [newSheet, setNewSheet] = useState({ title:'', member_type:'beam', fck:25, fy:415, clear_cover:25, notes:'' })
   const [calcReq, setCalcReq] = useState<any>({})
   const [calcResult, setCalcResult] = useState<any>(null)
   const [calcType, setCalcType] = useState('beam-bar')
   const [autoFile, setAutoFile] = useState<File|null>(null)
   const [autoQuery, setAutoQuery] = useState('all')
   const [autoResult, setAutoResult] = useState<any>(null)
-  const [summaryOpen, setSummaryOpen] = useState(false)
 
   const { data: projects } = useQuery({
     queryKey: ['projects-list'],
@@ -95,39 +81,6 @@ export default function BBSPage() {
     onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Failed to create sheet'),
   })
 
-  const addBar = useMutation({
-    mutationFn: (data: any) => editBarId
-      ? api.put(`/bbs/${sheetId}/bars/${editBarId}`, data)
-      : api.post(`/bbs/${sheetId}/bars`, data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['bbs-sheet', sheetId] })
-      qc.invalidateQueries({ queryKey: ['bbs-summary', sheetId] })
-      setShowAddBar(false)
-      setEditBarId(null)
-      setBarForm({...DEFAULT_BAR})
-      toast.success(editBarId ? 'Bar updated' : 'Bar added & calculated')
-    },
-    onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Failed to save bar'),
-  })
-
-  const deleteBar = useMutation({
-    mutationFn: (barId: string) => api.delete(`/bbs/${sheetId}/bars/${barId}`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['bbs-sheet', sheetId] })
-      qc.invalidateQueries({ queryKey: ['bbs-summary', sheetId] })
-      toast.success('Bar deleted')
-    },
-  })
-
-  const recalculate = useMutation({
-    mutationFn: () => api.post(`/bbs/${sheetId}/recalculate`),
-    onSuccess: ({ data }) => {
-      qc.invalidateQueries({ queryKey: ['bbs-sheet', sheetId] })
-      qc.invalidateQueries({ queryKey: ['bbs-summary', sheetId] })
-      toast.success(`Recalculated ${data.recalculated} bars — Total: ${data.total_weight_kg} kg`)
-    },
-  })
-
   const quickCalc = useMutation({
     mutationFn: () => api.post(`/bbs/calc/${calcType}`, calcReq),
     onSuccess: ({ data }) => setCalcResult(data),
@@ -147,28 +100,6 @@ export default function BBSPage() {
     onSuccess: ({ data }) => setAutoResult(data),
     onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Extraction failed'),
   })
-
-  const I = (label: string, key: string, type = 'number', step = '1') => (
-    <div className="space-y-1">
-      <Label className="text-xs text-muted-foreground">{label}</Label>
-      <Input type={type} step={step} value={barForm[key] ?? ''}
-        onChange={e => setBarForm((f: any) => ({ ...f, [key]: type === 'number' ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value }))}
-        className="h-8 text-sm" />
-    </div>
-  )
-
-  const IS = (label: string, key: string, options: string[]) => (
-    <div className="space-y-1">
-      <Label className="text-xs text-muted-foreground">{label}</Label>
-      <Select value={barForm[key]} onValueChange={v => setBarForm((f:any)=>({...f,[key]:v}))}>
-        <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-        <SelectContent>{options.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
-      </Select>
-    </div>
-  )
-
-  const isStirrups = ['stirrup_rect','stirrup_square'].includes(barForm.bar_shape) || barForm.bar_shape?.includes('stirr')
-  const isColumn   = sheet?.member_type === 'column'
 
   return (
     <div className="space-y-4">
@@ -271,215 +202,59 @@ export default function BBSPage() {
       )}
 
       {/* ── MANUAL BBS TAB ─────────────────────────────── */}
+      {tab === 'manual' && !sheetId && (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <p className="text-muted-foreground text-sm">Please select or create a BBS sheet to start Manual BBS workflow.</p>
+          </CardContent>
+        </Card>
+      )}
+      
       {tab === 'manual' && sheetId && sheet && (
         <div className="space-y-4">
-          {/* Sheet info bar */}
-          <div className="flex flex-wrap items-center gap-3 p-3 bg-muted/40 rounded-lg border">
-            <span className="font-semibold text-sm">{sheet.sheet_number}</span>
-            <span className="text-muted-foreground text-sm">—</span>
-            <span className="text-sm">{sheet.title}</span>
-            <Badge variant="outline">{sheet.member_type.toUpperCase()}</Badge>
-            <Badge variant="outline">M{sheet.fck} / Fe{sheet.fy}</Badge>
-            <div className="ml-auto flex gap-2">
-              <Button size="sm" variant="outline" onClick={() => recalculate.mutate()} disabled={recalculate.isPending}>
-                <Calculator className="h-3.5 w-3.5 mr-1" /> Recalculate All
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => window.open(`/api/v1/bbs/${sheetId}/export/excel`)}>
-                <Download className="h-3.5 w-3.5 mr-1" /> Excel
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => window.open(`/api/v1/bbs/${sheetId}/export/pdf`)}>
-                <FileText className="h-3.5 w-3.5 mr-1" /> PDF
-              </Button>
-              <Button size="sm" onClick={() => { setShowAddBar(s=>!s); setEditBarId(null); setBarForm({...DEFAULT_BAR}) }}>
-                <Plus className="h-3.5 w-3.5 mr-1" /> Add Bar
-              </Button>
-            </div>
-          </div>
-
-          {/* Add / Edit Bar Form */}
-          {showAddBar && (
-            <Card className="border-blue-300">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">{editBarId ? 'Edit Bar' : 'Add Bar Row'}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                  {I('Bar Mark', 'bar_mark', 'text')}
-                  {I('Member Mark', 'member_mark', 'text')}
-                  {I('Position', 'position', 'text')}
-                  {I('Floor / Level', 'floor_level', 'text')}
-                  {IS('Bar Shape', 'bar_shape', BAR_SHAPES)}
-                  <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">Dia (mm)</Label>
-                    <Select value={String(barForm.dia_mm)} onValueChange={v=>setBarForm((f:any)=>({...f,dia_mm:+v}))}>
-                      <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                      <SelectContent>{[6,8,10,12,16,20,25,28,32,36].map(d=><SelectItem key={d} value={String(d)}>{d}mm</SelectItem>)}</SelectContent>
-                    </Select>
-                  </div>
-                  {I('No. of Bars', 'num_bars')}
-                  {I('Clear Span (mm)', 'clear_span_mm', 'number', '1')}
-                  {I('Support Near (mm)', 'support_near_mm', 'number', '1')}
-                  {I('Support Far (mm)', 'support_far_mm', 'number', '1')}
-                  {isStirrups && <>{I('B (mm)', 'section_b_mm', 'number', '1')}{I('D (mm)', 'section_d_mm', 'number', '1')}</>}
-                  {isColumn && <>{I('Storey Height (mm)', 'storey_height_mm', 'number', '1')}</>}
-                  {I('Cover (mm)', 'cover_mm', 'number', '1')}
-                  {isStirrups && <>{I('Spacing (mm)', 'spacing_mm', 'number', '1')}{I('Zone Length (mm)', 'zone_length_mm', 'number', '1')}</>}
-                  {IS('Hook Type', 'hook_type', HOOK_TYPES)}
-                  <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">Hook Near</Label>
-                    <Select value={barForm.has_hook_near ? 'yes' : 'no'} onValueChange={v=>setBarForm((f:any)=>({...f,has_hook_near:v==='yes'}))}>
-                      <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectItem value="yes">Yes</SelectItem><SelectItem value="no">No</SelectItem></SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">Hook Far</Label>
-                    <Select value={barForm.has_hook_far ? 'yes' : 'no'} onValueChange={v=>setBarForm((f:any)=>({...f,has_hook_far:v==='yes'}))}>
-                      <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectItem value="yes">Yes</SelectItem><SelectItem value="no">No</SelectItem></SelectContent>
-                    </Select>
-                  </div>
-                  {I('Lap (mm)', 'lap_mm', 'number', '1')}
-                  {I('Dev Length (mm)', 'dev_length_mm', 'number', '1')}
-                  <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">Source</Label>
-                    <Select value={barForm.source} onValueChange={v=>setBarForm((f:any)=>({...f,source:v}))}>
-                      <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {['manual','drawing_schedule','dxf_geometry','drawing_section','general_note','calculated'].map(s=><SelectItem key={s} value={s}>{s}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="col-span-2 space-y-1">
-                    <Label className="text-xs text-muted-foreground">Remarks</Label>
-                    <Input value={barForm.remarks} onChange={e=>setBarForm((f:any)=>({...f,remarks:e.target.value}))} className="h-8 text-sm" />
-                  </div>
+          {/* Sheet header info */}
+          <Card className="border-primary/30">
+            <CardContent className="p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="font-semibold text-sm">{sheet.sheet_number}</span>
+                  <span className="text-muted-foreground text-sm">—</span>
+                  <span className="text-sm">{sheet.title}</span>
+                  <Badge variant="outline" className="text-xs">{sheet.member_type.toUpperCase()}</Badge>
+                  <Badge variant="outline" className="text-xs">M{sheet.fck} / Fe{sheet.fy}</Badge>
                 </div>
-                <div className="flex gap-2 mt-4">
-                  <Button size="sm" onClick={() => addBar.mutate(barForm)} disabled={addBar.isPending}>
-                    {addBar.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Calculator className="h-4 w-4 mr-1" />}
-                    {editBarId ? 'Update & Calculate' : 'Add & Calculate'}
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => { setShowAddBar(false); setEditBarId(null); setBarForm({...DEFAULT_BAR}) }}>Cancel</Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* BBS Table */}
-          <Card>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead className="bg-[hsl(var(--primary))] text-white">
-                    <tr>
-                      {['Bar Mark','Member','Position','Dia','Shape','No.','Clear Span','B×D','Cut Length','Lap','Total Length','Wt/m','Total Wt','Status','Actions'].map(h => (
-                        <th key={h} className="px-2 py-2 text-left whitespace-nowrap font-medium">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {(sheet.bars ?? []).length === 0 && (
-                      <tr><td colSpan={15} className="px-4 py-12 text-center text-muted-foreground">
-                        No bars added yet. Click "Add Bar" to start entering BBS data.
-                      </td></tr>
-                    )}
-                    {(sheet.bars ?? []).map((bar: any) => {
-                      if (bar.is_heading) return (
-                        <tr key={bar.id} className="bg-blue-50">
-                          <td colSpan={15} className="px-3 py-1.5 font-semibold text-primary text-xs">
-                            {bar.bar_mark || bar.position || 'Section'}
-                          </td>
-                        </tr>
-                      )
-                      const hasIssue = bar.status !== 'calculated'
-                      return (
-                        <tr key={bar.id} className={`hover:bg-muted/30 ${hasIssue ? 'bg-red-50' : ''}`}>
-                          <td className="px-2 py-1.5 font-medium">{bar.bar_mark || '—'}</td>
-                          <td className="px-2 py-1.5">{bar.member_mark || '—'}</td>
-                          <td className="px-2 py-1.5">{bar.position || '—'}</td>
-                          <td className="px-2 py-1.5 font-mono">{bar.dia_mm ? `${bar.dia_mm}Ø` : '—'}</td>
-                          <td className="px-2 py-1.5">{bar.bar_shape || '—'}</td>
-                          <td className="px-2 py-1.5 text-center">{bar.num_bars ?? '—'}</td>
-                          <td className="px-2 py-1.5 text-right font-mono">{fmt(bar.clear_span_mm)}</td>
-                          <td className="px-2 py-1.5 font-mono">{bar.section_b_mm && bar.section_d_mm ? `${bar.section_b_mm}×${bar.section_d_mm}` : '—'}</td>
-                          <td className="px-2 py-1.5 text-right font-mono font-semibold">{fmt(bar.cutting_length_mm)}</td>
-                          <td className="px-2 py-1.5 text-right font-mono">{fmt(bar.lap_mm)}</td>
-                          <td className="px-2 py-1.5 text-right font-mono">{fmt(bar.total_length_mm)}</td>
-                          <td className="px-2 py-1.5 text-right font-mono">{bar.unit_weight_kg_per_m?.toFixed(3) ?? '—'}</td>
-                          <td className="px-2 py-1.5 text-right font-mono font-semibold">{bar.total_weight_kg?.toFixed(3) ?? '—'}</td>
-                          <td className="px-2 py-1.5">{statusBadge(bar.status)}</td>
-                          <td className="px-2 py-1.5 flex gap-1">
-                            <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => {
-                              setEditBarId(bar.id)
-                              setBarForm({ ...DEFAULT_BAR, ...bar })
-                              setShowAddBar(true)
-                            }}><FileText className="h-3 w-3" /></Button>
-                            <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive" onClick={() => deleteBar.mutate(bar.id)}>
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
               </div>
             </CardContent>
           </Card>
 
-          {/* Summary toggle */}
-          <button className="flex items-center gap-2 text-sm font-medium text-primary hover:underline"
-            onClick={() => setSummaryOpen(s => !s)}>
-            {summaryOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            Diameter-wise Summary & Total Weight
-          </button>
-          {summaryOpen && summary && (
-            <Card>
-              <CardContent className="p-4">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-                  <div className="text-center p-3 bg-primary/5 rounded-lg">
-                    <p className="text-xs text-muted-foreground">Total Bars</p>
-                    <p className="text-2xl font-bold">{summary.bar_count}</p>
-                  </div>
-                  <div className="text-center p-3 bg-green-50 rounded-lg">
-                    <p className="text-xs text-muted-foreground">Total Steel Weight</p>
-                    <p className="text-2xl font-bold text-green-700">{summary.total_weight_kg} kg</p>
-                  </div>
-                  {summary.verify_items?.length > 0 && (
-                    <div className="text-center p-3 bg-red-50 rounded-lg col-span-2">
-                      <p className="text-xs text-red-700 font-semibold">
-                        <AlertTriangle className="inline h-3 w-3 mr-1" />
-                        {summary.verify_items.length} bar(s) need verification: {summary.verify_items.join(', ')}
-                      </p>
-                    </div>
-                  )}
-                </div>
-                <table className="w-full text-sm">
-                  <thead><tr className="bg-muted/50">
-                    {['Dia (mm)','No. Bars','Total Length (m)','Total Weight (kg)','Unit Weight (kg/m)'].map(h=>(
-                      <th key={h} className="px-3 py-2 text-left text-xs font-medium">{h}</th>
-                    ))}
-                  </tr></thead>
-                  <tbody className="divide-y">
-                    {(summary.diameter_summary ?? []).map((d: any) => (
-                      <tr key={d.dia_mm} className="hover:bg-muted/30">
-                        <td className="px-3 py-1.5 font-bold">{d.dia_mm}Ø</td>
-                        <td className="px-3 py-1.5">{d.num_bars}</td>
-                        <td className="px-3 py-1.5 font-mono">{d.total_length_m}</td>
-                        <td className="px-3 py-1.5 font-mono font-semibold">{d.total_weight_kg}</td>
-                        <td className="px-3 py-1.5 font-mono text-muted-foreground">{(d.dia_mm**2/162).toFixed(3)}</td>
-                      </tr>
-                    ))}
-                    <tr className="font-bold bg-muted/30">
-                      <td className="px-3 py-1.5">TOTAL</td>
-                      <td className="px-3 py-1.5">{summary.bar_count}</td>
-                      <td className="px-3 py-1.5"></td>
-                      <td className="px-3 py-1.5 text-primary">{summary.total_weight_kg} kg</td>
-                      <td></td>
-                    </tr>
-                  </tbody>
-                </table>
+          {/* Render member-specific component based on sheet.member_type */}
+          {sheet.member_type === 'beam' && (
+            <ManualBeamBBS 
+              projectId={projectId} 
+              sheetId={sheetId} 
+              sheet={sheet}
+            />
+          )}
+
+          {sheet.member_type === 'column' && (
+            <ManualColumnBBS 
+              projectId={projectId} 
+              sheetId={sheetId} 
+              sheet={sheet}
+            />
+          )}
+
+          {!['beam', 'column'].includes(sheet.member_type) && (
+            <Card className="border-amber-300 bg-amber-50/30">
+              <CardContent className="p-6 text-center">
+                <AlertTriangle className="h-8 w-8 text-amber-600 mx-auto mb-2" />
+                <p className="font-semibold text-amber-900">Member-Specific BBS Not Available</p>
+                <p className="text-sm text-amber-700 mt-1">
+                  Manual BBS for <strong>{sheet.member_type.toUpperCase()}</strong> is not yet implemented.
+                </p>
+                <p className="text-xs text-amber-600 mt-2">
+                  Currently supported: BEAM, COLUMN
+                </p>
               </CardContent>
             </Card>
           )}

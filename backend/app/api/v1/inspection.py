@@ -210,13 +210,13 @@ async def building_safety(
 @router.post("/init-models", summary="Force download and load ONNX models")
 def init_models(_: User = Depends(get_current_active_user)):
     """Triggers model download from GitHub Releases and loads into memory."""
-    from app.services.ai_inspection import ensure_models_loaded, _sessions, ONNX_AVAILABLE
+    from app.services.ai_inspection import ensure_models_loaded, _current_session, ONNX_AVAILABLE
     success = ensure_models_loaded()
     return {
         "success":        success,
         "onnx_available": ONNX_AVAILABLE,
-        "models_loaded":  list(_sessions.keys()),
-        "count":          len(_sessions),
+        "models_loaded":  [type(_current_session).__name__] if _current_session else [],
+        "count":          1 if _current_session else 0,
     }
 
 
@@ -224,7 +224,7 @@ def init_models(_: User = Depends(get_current_active_user)):
 @router.get("/models/status", summary="Check which AI models are loaded")
 def model_status(_: User = Depends(get_current_active_user)):
     """Shows which ONNX model files are present and loaded."""
-    from app.services.ai_inspection import _sessions, ML_DIR, ONNX_AVAILABLE
+    from app.services.ai_inspection import _current_session, _current_key, ML_DIR, ONNX_AVAILABLE
 
     model_files = {
         "resnet50_crack":    "ResNet50_model.onnx",
@@ -240,7 +240,7 @@ def model_status(_: User = Depends(get_current_active_user)):
         status_map[key] = {
             "filename":    filename,
             "file_exists": path.exists(),
-            "loaded":      key in _sessions,
+            "loaded":      _current_key == key if _current_session else False,
             "size_mb":     round(path.stat().st_size / 1_048_576, 1) if path.exists() else 0,
         }
     return {

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Auth Test</title>
+    <style>
+        body { font-family: monospace; padding: 20px; }
+        .section { margin: 20px 0; padding: 10px; border: 1px solid #ccc; }
+        .pass { color: green; }
+        .fail { color: red; }
+        button { padding: 10px; margin: 5px; }
+        pre { background: #f5f5f5; padding: 10px; }
+    </style>
+</head>
+<body>
+    <h1>SmartBOQ Pro - Auth Test</h1>
+    
+    <div class="section">
+        <h2>1. Check localStorage</h2>
+        <div id="storage-check"></div>
+    </div>
+    
+    <div class="section">
+        <h2>2. Login</h2>
+        <input id="email" value="admin@smartboq.com" style="width:200px"/><br/>
+        <input id="password" type="password" value="Admin@1234" style="width:200px"/><br/>
+        <button onclick="doLogin()">Login</button>
+        <div id="login-result"></div>
+    </div>
+    
+    <div class="section">
+        <h2>3. Test /auth/me</h2>
+        <button onclick="testMe()">Test /auth/me</button>
+        <div id="me-result"></div>
+    </div>
+    
+    <div class="section">
+        <h2>4. Test /projects</h2>
+        <button onclick="testProjects()">Test /projects</button>
+        <div id="projects-result"></div>
+    </div>
+    
+    <div class="section">
+        <h2>5. Test /bbs/auto/project/{id}</h2>
+        <input id="project-id" value="2a8fa70f-560d-495f-b945-b1c18f602efd" style="width:300px"/><br/>
+        <button onclick="testBBSAuto()">Test BBS Auto</button>
+        <div id="bbs-result"></div>
+    </div>
+
+    <script>
+        const BASE = '/api/v1';
+        
+        function log(id, html, isError = false) {
+            const el = document.getElementById(id);
+            el.innerHTML = html;
+            el.className = isError ? 'fail' : 'pass';
+        }
+        
+        function checkStorage() {
+            const access = localStorage.getItem('access_token');
+            const refresh = localStorage.getItem('refresh_token');
+            const html = `
+                <div>access_token: ${access ? access.substring(0, 40) + '...' : '<span class="fail">NOT FOUND</span>'}</div>
+                <div>refresh_token: ${refresh ? refresh.substring(0, 40) + '...' : '<span class="fail">NOT FOUND</span>'}</div>
+            `;
+            document.getElementById('storage-check').innerHTML = html;
+        }
+        
+        async function doLogin() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            try {
+                const res = await fetch(`${BASE}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    localStorage.setItem('access_token', data.access_token);
+                    localStorage.setItem('refresh_token', data.refresh_token);
+                    log('login-result', `✅ Login successful<br/>User: ${data.user.email}<br/>Token: ${data.access_token.substring(0,50)}...`);
+                    checkStorage();
+                } else {
+                    log('login-result', `❌ Login failed: ${res.status} ${JSON.stringify(data)}`, true);
+                }
+            } catch (e) {
+                log('login-result', `❌ Error: ${e.message}`, true);
+            }
+        }
+        
+        async function testMe() {
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                log('me-result', '❌ No token in localStorage. Login first.', true);
+                return;
+            }
+            try {
+                const res = await fetch(`${BASE}/auth/me`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    log('me-result', `✅ ${res.status} OK<br/>User: ${data.email}<br/>Role: ${data.role}`);
+                } else {
+                    log('me-result', `❌ ${res.status} ${JSON.stringify(data)}`, true);
+                }
+            } catch (e) {
+                log('me-result', `❌ Error: ${e.message}`, true);
+            }
+        }
+        
+        async function testProjects() {
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                log('projects-result', '❌ No token in localStorage. Login first.', true);
+                return;
+            }
+            try {
+                const res = await fetch(`${BASE}/projects/?limit=5`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    log('projects-result', `✅ ${res.status} OK<br/>Total: ${data.total}<br/>Projects: ${data.data.map(p => p.project_name).join(', ')}`);
+                } else {
+                    log('projects-result', `❌ ${res.status} ${JSON.stringify(data)}`, true);
+                }
+            } catch (e) {
+                log('projects-result', `❌ Error: ${e.message}`, true);
+            }
+        }
+        
+        async function testBBSAuto() {
+            const token = localStorage.getItem('access_token');
+            const pid = document.getElementById('project-id').value;
+            if (!token) {
+                log('bbs-result', '❌ No token in localStorage. Login first.', true);
+                return;
+            }
+            try {
+                const res = await fetch(`${BASE}/bbs/auto/project/${pid}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    log('bbs-result', `✅ ${res.status} OK<br/>Files: ${data.files?.length || 0}<br/>Beams: ${data.beams?.length || 0}<br/>Columns: ${data.columns?.length || 0}`);
+                } else {
+                    log('bbs-result', `❌ ${res.status} ${JSON.stringify(data)}`, true);
+                }
+            } catch (e) {
+                log('bbs-result', `❌ Error: ${e.message}`, true);
+            }
+        }
+        
+        checkStorage();
+    </script>
+</body>
+</html>
