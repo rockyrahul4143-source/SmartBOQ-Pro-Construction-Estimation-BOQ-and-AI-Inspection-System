@@ -1194,7 +1194,50 @@ async def complete_beam_bbs(
             "right_stirrup_zone": beam_data.right_stirrup_zone,
             "remarks": beam_data.remarks
         }
-        
+
+        # Auto-assign bar marks where blank and sanitize stirrup zones
+        def _auto_mark(bars: list, prefix: str) -> list:
+            out = []
+            for i, b in enumerate(bars or []):
+                bd = dict(b) if not isinstance(b, dict) else b
+                if not bd.get('bar_mark'):
+                    bd['bar_mark'] = f"{prefix}{i+1}"
+                # Convert empty string numeric fields to None/0
+                for field in ('left_anchorage_ld', 'right_anchorage_ld', 'lap_length',
+                              'anchorage_ld', 'extension_length', 'development_anchorage',
+                              'custom_length', 'custom_extension'):
+                    if bd.get(field) == '' or bd.get(field) == 0:
+                        bd[field] = None
+                out.append(bd)
+            return out
+
+        def _sanitize_zone(zone):
+            if zone is None:
+                return None
+            z = dict(zone) if not isinstance(zone, dict) else zone
+            # Convert empty-string numeric values to 0.0
+            for field in ('spacing', 'zone_length', 'hook_extension', 'bend_angle'):
+                if z.get(field) == '':
+                    z[field] = 0.0
+                if z.get(field) is None:
+                    z[field] = 0.0
+            # Ensure spacing > 0 (if not set, keep 0 — quantity guard handles it)
+            z['spacing'] = float(z.get('spacing', 0) or 0)
+            z['zone_length'] = float(z.get('zone_length', 0) or 0)
+            # Auto-assign stirrup mark
+            if not z.get('stirrup_mark'):
+                z['stirrup_mark'] = 'S'
+            return z
+
+        beam_input_data["top_main_bars"]         = _auto_mark(beam_input_data["top_main_bars"], "T")
+        beam_input_data["bottom_main_bars"]      = _auto_mark(beam_input_data["bottom_main_bars"], "B")
+        beam_input_data["bottom_curtailed_bars"] = _auto_mark(beam_input_data["bottom_curtailed_bars"], "C")
+        beam_input_data["top_extra_left_bars"]   = _auto_mark(beam_input_data["top_extra_left_bars"], "EL")
+        beam_input_data["top_extra_right_bars"]  = _auto_mark(beam_input_data["top_extra_right_bars"], "ER")
+        beam_input_data["left_stirrup_zone"]     = _sanitize_zone(beam_input_data.get("left_stirrup_zone"))
+        beam_input_data["middle_stirrup_zone"]   = _sanitize_zone(beam_input_data.get("middle_stirrup_zone"))
+        beam_input_data["right_stirrup_zone"]    = _sanitize_zone(beam_input_data.get("right_stirrup_zone"))
+
         # Calculate complete BBS
         result = create_complete_beam_bbs(beam_input_data)
         

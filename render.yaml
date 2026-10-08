@@ -5,6 +5,7 @@ services:
     region: oregon
     plan: free
     rootDir: backend
+    autoDeploy: true
     buildCommand: pip install --upgrade pip && pip install --prefer-binary -r requirements.txt
     startCommand: python start_render.py
     healthCheckPath: /health

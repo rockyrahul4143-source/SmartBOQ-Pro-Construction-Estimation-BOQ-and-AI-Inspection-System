@@ -106,10 +106,9 @@ export default function ManualColumnBBS({ projectId, sheetId, sheet }: Props) {
 
   /* ── column info ─────────────────────────── */
   const [info, setInfo] = useState({
-    project:'', building_tower:'', block:'', floor_level:'',
-    drawing_reference:'', column_mark:'', description:'',
+    column_mark:'',
     number_of_units:1, column_width:'', column_depth:'', clear_floor_height:'',
-    concrete_grade:'M25', steel_grade:'FE415', cover:40, remarks:''
+    concrete_grade:'M25', steel_grade:'FE415', cover:40,
   })
 
   /* ── reinforcement groups ────────────────── */
@@ -231,7 +230,7 @@ export default function ManualColumnBBS({ projectId, sheetId, sheet }: Props) {
 
     calcMut.mutate({
       ...info,
-      project: info.project || projectId,
+      project: projectId,
       column_width: Number(info.column_width),
       column_depth: Number(info.column_depth),
       clear_floor_height: Number(info.clear_floor_height),
@@ -410,22 +409,21 @@ export default function ManualColumnBBS({ projectId, sheetId, sheet }: Props) {
         {open.info && (
           <CardContent>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {inp('Project',             info.project,           v=>setInfo({...info,project:v}))}
-              {inp('Building/Tower',      info.building_tower,    v=>setInfo({...info,building_tower:v}))}
-              {inp('Block',               info.block,             v=>setInfo({...info,block:v}))}
-              {inp('Floor/Level',         info.floor_level,       v=>setInfo({...info,floor_level:v}))}
-              {inp('Drawing Reference',   info.drawing_reference, v=>setInfo({...info,drawing_reference:v}))}
-              {inp('Column Mark *',       info.column_mark,       v=>setInfo({...info,column_mark:v}))}
-              {inp('Description',         info.description,       v=>setInfo({...info,description:v}))}
-              {inp('No. of Units',        info.number_of_units,   v=>setInfo({...info,number_of_units:v}), 'number','1')}
-              {inp('Column Width (mm) *', info.column_width,      v=>setInfo({...info,column_width:v}), 'number','1')}
-              {inp('Column Depth (mm) *', info.column_depth,      v=>setInfo({...info,column_depth:v}), 'number','1')}
+              {inp('Column Mark *',           info.column_mark,        v=>setInfo({...info,column_mark:v}))}
+              {inp('No. of Units',            info.number_of_units,    v=>setInfo({...info,number_of_units:v}), 'number','1')}
+              {inp('Column Width (mm) *',     info.column_width,       v=>setInfo({...info,column_width:v}), 'number','1')}
+              {inp('Column Depth (mm) *',     info.column_depth,       v=>setInfo({...info,column_depth:v}), 'number','1')}
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Column Size</Label>
+                <div className="h-8 flex items-center px-3 rounded border bg-muted/40 text-sm font-mono text-muted-foreground">
+                  {info.column_width && info.column_depth ? `${info.column_width} × ${info.column_depth} mm` : '— × — mm'}
+                </div>
+              </div>
               {inp('Clear Floor Height (mm) *', info.clear_floor_height, v=>setInfo({...info,clear_floor_height:v}), 'number','1')}
-              {sel('Concrete Grade',      info.concrete_grade,    v=>setInfo({...info,concrete_grade:v}), CONCRETE_GRADES)}
-              {sel('Steel Grade',         info.steel_grade,       v=>setInfo({...info,steel_grade:v}), STEEL_GRADES)}
-              {inp('Clear Cover (mm)',    info.cover,             v=>setInfo({...info,cover:v}), 'number','1')}
+              {sel('Concrete Grade',          info.concrete_grade,     v=>setInfo({...info,concrete_grade:v}), CONCRETE_GRADES)}
+              {sel('Steel Grade',             info.steel_grade,        v=>setInfo({...info,steel_grade:v}), STEEL_GRADES)}
+              {inp('Clear Cover (mm)',         info.cover,              v=>setInfo({...info,cover:v}), 'number','1')}
             </div>
-            <div className="mt-3">{inp('Remarks', info.remarks, v=>setInfo({...info,remarks:v}))}</div>
           </CardContent>
         )}
       </Card>

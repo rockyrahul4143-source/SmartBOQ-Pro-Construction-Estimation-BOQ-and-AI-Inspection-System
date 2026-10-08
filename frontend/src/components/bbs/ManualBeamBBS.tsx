@@ -83,10 +83,9 @@ export default function ManualBeamBBS({ projectId, sheetId, sheet }: Props) {
 
   /* ── beam info ────────────────────────────── */
   const [info, setInfo] = useState({
-    project:'', building_tower:'', block:'', floor_level:'',
-    drawing_reference:'', beam_mark:'', description:'',
+    building_tower:'', beam_mark:'',
     number_of_units:1, beam_width:'', beam_depth:'', clear_span:'',
-    concrete_grade:'M25', steel_grade:'FE415', cover:25, remarks:''
+    concrete_grade:'M25', steel_grade:'FE415', cover:25,
   })
 
   /* ── reinforcement lists ─────────────────── */
@@ -166,20 +165,20 @@ export default function ManualBeamBBS({ projectId, sheetId, sheet }: Props) {
     if (!info.clear_span)  { toast.error('Clear Span is required');  return }
     calcMut.mutate({
       ...info,
-      project: info.project || projectId,
+      project: projectId,
       beam_width: Number(info.beam_width),
       beam_depth: Number(info.beam_depth),
       clear_span: Number(info.clear_span),
       cover: Number(info.cover),
       number_of_units: Number(info.number_of_units),
-      top_main_bars:       topMainBars,
-      bottom_main_bars:    bottomMainBars,
+      top_main_bars:         topMainBars,
+      bottom_main_bars:      bottomMainBars,
       bottom_curtailed_bars: bottomCurtailed,
-      top_extra_left_bars:  topExtraLeft,
-      top_extra_right_bars: topExtraRight,
-      left_stirrup_zone:   leftZone.stirrup_mark  ? cleanZone(leftZone)  : null,
-      middle_stirrup_zone: midZone.stirrup_mark   ? cleanZone(midZone)   : null,
-      right_stirrup_zone:  rightZone.stirrup_mark ? cleanZone(rightZone) : null,
+      top_extra_left_bars:   topExtraLeft,
+      top_extra_right_bars:  topExtraRight,
+      left_stirrup_zone:     leftZone.stirrup_mark  ? cleanZone(leftZone)  : null,
+      middle_stirrup_zone:   midZone.stirrup_mark   ? cleanZone(midZone)   : null,
+      right_stirrup_zone:    rightZone.stirrup_mark ? cleanZone(rightZone) : null,
     })
   }
 
@@ -358,22 +357,22 @@ export default function ManualBeamBBS({ projectId, sheetId, sheet }: Props) {
         {open.info && (
           <CardContent>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {inp('Project',            info.project,           v=>setInfo({...info,project:v}))}
-              {inp('Building/Tower',     info.building_tower,    v=>setInfo({...info,building_tower:v}))}
-              {inp('Block',              info.block,             v=>setInfo({...info,block:v}))}
-              {inp('Floor/Level',        info.floor_level,       v=>setInfo({...info,floor_level:v}))}
-              {inp('Drawing Reference',  info.drawing_reference, v=>setInfo({...info,drawing_reference:v}))}
+              {inp('Building / Tower',   info.building_tower,    v=>setInfo({...info,building_tower:v}))}
               {inp('Beam Mark *',        info.beam_mark,         v=>setInfo({...info,beam_mark:v}))}
-              {inp('Description',        info.description,       v=>setInfo({...info,description:v}))}
               {inp('No. of Units',       info.number_of_units,   v=>setInfo({...info,number_of_units:v}), 'number','1')}
               {inp('Beam Width (mm) *',  info.beam_width,        v=>setInfo({...info,beam_width:v}), 'number','1')}
               {inp('Beam Depth (mm) *',  info.beam_depth,        v=>setInfo({...info,beam_depth:v}), 'number','1')}
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Beam Size</Label>
+                <div className="h-8 flex items-center px-3 rounded border bg-muted/40 text-sm font-mono text-muted-foreground">
+                  {info.beam_width && info.beam_depth ? `${info.beam_width} × ${info.beam_depth} mm` : '— × — mm'}
+                </div>
+              </div>
               {inp('Clear Span (mm) *',  info.clear_span,        v=>setInfo({...info,clear_span:v}), 'number','1')}
               {sel('Concrete Grade',     info.concrete_grade,    v=>setInfo({...info,concrete_grade:v}), CONCRETE_GRADES)}
               {sel('Steel Grade',        info.steel_grade,       v=>setInfo({...info,steel_grade:v}), STEEL_GRADES)}
               {inp('Clear Cover (mm)',   info.cover,             v=>setInfo({...info,cover:v}), 'number','1')}
             </div>
-            <div className="mt-3">{inp('Remarks', info.remarks, v=>setInfo({...info,remarks:v}))}</div>
           </CardContent>
         )}
       </Card>

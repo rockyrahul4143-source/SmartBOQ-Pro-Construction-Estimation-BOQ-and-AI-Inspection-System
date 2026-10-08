@@ -440,7 +440,7 @@ def calculate_development_length_is456(
 
 class BeamTopMainBar(BaseModel):
     """Top main/continuous bar input"""
-    bar_mark: str = Field(..., description="Bar mark/identifier")
+    bar_mark: str = Field("", description="Bar mark/identifier (auto-generated if blank)")
     diameter: int = Field(..., description="Bar diameter in mm")
     number_of_bars: int = Field(..., description="Number of bars")
     left_anchorage_ld: Optional[float] = Field(None, description="Left anchorage/Ld in mm")
@@ -456,7 +456,7 @@ class BeamTopMainBar(BaseModel):
 
 class BeamBottomMainBar(BaseModel):
     """Bottom main/continuous bar input"""
-    bar_mark: str = Field(..., description="Bar mark/identifier")
+    bar_mark: str = Field("", description="Bar mark/identifier (auto-generated if blank)")
     diameter: int = Field(..., description="Bar diameter in mm")
     number_of_bars: int = Field(..., description="Number of bars")
     left_anchorage_ld: Optional[float] = Field(None, description="Left anchorage/Ld in mm")
@@ -472,11 +472,11 @@ class BeamBottomMainBar(BaseModel):
 
 class BeamCurtailedBar(BaseModel):
     """Bottom mid-span/curtailed bar input"""
-    bar_mark: str = Field(..., description="Bar mark/identifier")
+    bar_mark: str = Field("", description="Bar mark/identifier (auto-generated if blank)")
     diameter: int = Field(..., description="Bar diameter in mm")
     number_of_bars: int = Field(..., description="Number of bars")
     number_of_units: int = Field(1, description="Number of identical units")
-    curtailment_rule: CurtailmentRule = Field(..., description="Curtailment rule")
+    curtailment_rule: CurtailmentRule = Field(CurtailmentRule.L_QUARTER, description="Curtailment rule")
     extension_length: Optional[float] = Field(None, description="Extension length in mm")
     development_anchorage: Optional[float] = Field(None, description="Development/anchorage in mm")
     lap_method: LapMethod = Field(LapMethod.CODE_BASED, description="Lap method")
@@ -488,10 +488,10 @@ class BeamCurtailedBar(BaseModel):
 
 class BeamExtraBar(BaseModel):
     """Top extra bar (left/right) input"""
-    bar_mark: str = Field(..., description="Bar mark/identifier")
+    bar_mark: str = Field("", description="Bar mark/identifier (auto-generated if blank)")
     diameter: int = Field(..., description="Bar diameter in mm")
     number_of_bars: int = Field(..., description="Number of bars")
-    extension_rule: ExtensionRule = Field(..., description="Extension rule")
+    extension_rule: ExtensionRule = Field(ExtensionRule.L_QUARTER, description="Extension rule")
     extension_length: Optional[float] = Field(None, description="Extension length in mm")
     development_anchorage: Optional[float] = Field(None, description="Development/anchorage in mm")
     lap_method: LapMethod = Field(LapMethod.CODE_BASED, description="Lap method")
@@ -503,10 +503,10 @@ class BeamExtraBar(BaseModel):
 
 class BeamStirrupZone(BaseModel):
     """Beam stirrup zone configuration"""
-    stirrup_mark: str = Field(..., description="Stirrup mark/identifier")
+    stirrup_mark: str = Field("", description="Stirrup mark/identifier (auto-generated if blank)")
     diameter: int = Field(..., description="Stirrup diameter in mm")
-    spacing: float = Field(..., description="Stirrup spacing in mm")
-    zone_length: float = Field(..., description="Zone length in mm")
+    spacing: float = Field(..., description="Stirrup spacing in mm (must be > 0)")
+    zone_length: float = Field(0.0, description="Zone length in mm (0 = use full clear span)")
     number_of_legs: int = Field(2, description="Number of stirrup legs")
     cover: float = Field(25, description="Cover in mm")
     shape: str = Field("rectangular", description="Stirrup shape")
@@ -1476,6 +1476,10 @@ def calculate_stirrup_quantity(
             'method': 'Drawing specified',
             'result': quantity
         })
+    elif spacing <= 0:
+        # spacing not set yet — return 0 without crashing
+        quantity = 0
+        calculation_trace.update({'method': 'Spacing not set', 'result': 0})
     else:
         # Calculate based on spacing
         if endpoint_convention == "both_ends":
@@ -1589,8 +1593,10 @@ class CompleteBeamBBSCalculator:
                 length, length_trace = calculate_stirrup_cutting_length(
                     stirrup_zone, self.input.beam_width, self.input.beam_depth
                 )
+                # If zone_length is 0 (not set), use the full clear span
+                eff_zone_length = stirrup_zone.zone_length if stirrup_zone.zone_length > 0 else self.input.clear_span
                 quantity, qty_trace = calculate_stirrup_quantity(
-                    stirrup_zone.zone_length, stirrup_zone.spacing, 
+                    eff_zone_length, stirrup_zone.spacing,
                     stirrup_zone.quantity_source, stirrup_zone.specified_quantity
                 )
                 
@@ -1910,9 +1916,15 @@ class CompleteColumnBBSCalculator:
             
         # Calculate cross ties
         for tie in self.input.cross_ties:
+            # Derive geometry_length from column width if not explicitly set
+            # CrossTie spans the full column width minus cover on each side
+            if tie.geometry_length is None:
+                col_cover = self.input.cover
+                tie.geometry_length = self.input.column_width - 2 * col_cover - tie.diameter
+            eff_zone_length = tie.zone_length if tie.zone_length > 0 else self.input.clear_floor_height
             length, length_trace = calculate_cross_tie_cutting_length(tie)
             quantity, qty_trace = calculate_stirrup_quantity(
-                tie.zone_length, tie.spacing,
+                eff_zone_length, tie.spacing,
                 tie.quantity_source, tie.specified_quantity
             )
             
