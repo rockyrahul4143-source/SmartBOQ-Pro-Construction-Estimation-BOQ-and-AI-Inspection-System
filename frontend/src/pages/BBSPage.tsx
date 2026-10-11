@@ -271,12 +271,18 @@ export default function BBSPage() {
             <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
               <Info className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
               <div className="text-sm text-blue-800">
-                <p className="font-semibold mb-1">Supported formats:</p>
+                <p className="font-semibold mb-1">How this works:</p>
                 <ul className="list-disc ml-4 space-y-0.5 text-xs">
-                  <li><strong>DXF</strong> — AutoCAD DXF files (geometry extraction, dimensions, text)</li>
-                  <li><strong>PDF</strong> — Structural drawing PDFs (reference only — enter values in Manual BBS)</li>
-                  <li><strong>DWG</strong> — Open in AutoCAD → Save As DXF 2010 ASCII → re-upload</li>
+                  <li><strong>DXF</strong> — Full geometry + text extraction (dimensions, member marks, reinforcement)</li>
+                  <li><strong>PDF (text-layer)</strong> — Schedule parsing via text extraction (pdfminer / pypdf)</li>
+                  <li><strong>PDF (scanned)</strong> — OCR attempted; uncertain values flagged as VERIFY REQUIRED</li>
+                  <li><strong>PNG / JPG</strong> — OCR attempted for schedule images</li>
+                  <li><strong>DWG</strong> — Convert to DXF first: AutoCAD → Save As → DXF 2010 ASCII</li>
+                  <li><strong>XLSX / CSV</strong> — Table extraction for schedule spreadsheets</li>
                 </ul>
+                <p className="text-xs mt-1.5 text-blue-700">
+                  Files uploaded here are saved to your project and visible in <strong>Drawings &amp; Schedules</strong>.
+                </p>
               </div>
             </div>
             {!projectId && <p className="text-sm text-muted-foreground">Select a project first.</p>}
@@ -284,8 +290,8 @@ export default function BBSPage() {
               <div className="space-y-3">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <Label>Upload Drawing File</Label>
-                    <Input type="file" accept=".dxf,.pdf,.dwg"
+                    <Label>Upload Drawing or Schedule File</Label>
+                    <Input type="file" accept=".dxf,.pdf,.dwg,.png,.jpg,.jpeg,.xlsx,.csv"
                       onChange={e => setAutoFile(e.target.files?.[0] ?? null)} />
                     {autoFile && <p className="text-xs text-muted-foreground">{autoFile.name} ({(autoFile.size/1024).toFixed(1)} KB)</p>}
                   </div>
@@ -293,7 +299,7 @@ export default function BBSPage() {
                     <Label>Member Query (optional)</Label>
                     <Input value={autoQuery} onChange={e => setAutoQuery(e.target.value)}
                       placeholder="all / EB5 / C1 / beam GF" />
-                    <p className="text-xs text-muted-foreground">Examples: "all", "EB5", "column C1", "beam ground floor"</p>
+                    <p className="text-xs text-muted-foreground">Examples: "all", "EB5", "C1", "all beams"</p>
                   </div>
                 </div>
                 <Button onClick={() => autoExtract.mutate()} disabled={!autoFile || autoExtract.isPending}>
@@ -304,24 +310,45 @@ export default function BBSPage() {
             )}
             {autoResult && (
               <div className="space-y-3 mt-4">
-                <p className="font-semibold text-sm">Extraction Results — {autoResult.filename}</p>
+                <div className="flex items-center gap-2">
+                  <p className="font-semibold text-sm">Extraction Results — {autoResult.filename}</p>
+                  {autoResult.extraction_method && (
+                    <Badge variant="outline" className="text-xs">{autoResult.extraction_method}</Badge>
+                  )}
+                  {autoResult.file_saved_to_project && (
+                    <Badge className="text-xs bg-green-600 text-white">Saved to project</Badge>
+                  )}
+                </div>
+                {autoResult.members_found?.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Members found: {autoResult.members_found.slice(0, 15).join(', ')}
+                    {autoResult.members_found.length > 15 ? ` +${autoResult.members_found.length - 15} more` : ''}
+                  </p>
+                )}
                 {(autoResult.extracted ?? []).map((item: any, i: number) => (
-                  <Card key={i} className={item.status === 'verify_required' ? 'border-orange-300' : 'border-green-300'}>
+                  <Card key={i} className={
+                    item.status === 'verify_required' || item.status === 'not_supported' ? 'border-orange-300' :
+                    item.status === 'found' ? 'border-green-300' : 'border-slate-300'
+                  }>
                     <CardContent className="p-4">
                       <div className="flex items-start gap-2 mb-2">
-                        {item.status === 'verify_required'
+                        {item.status === 'verify_required' || item.status === 'not_supported'
                           ? <AlertTriangle className="h-4 w-4 text-orange-500 mt-0.5" />
                           : <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5" />}
                         <span className="font-semibold">{item.member_mark}</span>
-                        <Badge variant="outline" className="text-xs">{item.source}</Badge>
+                        {item.source && <Badge variant="outline" className="text-xs">{item.source}</Badge>}
                         <Badge variant={item.status === 'verify_required' ? 'destructive' : 'outline'} className="text-xs">{item.status}</Badge>
                       </div>
                       {item.message && <p className="text-sm text-muted-foreground">{item.message}</p>}
-                      {item.building_footprint_m2 > 0 && (
-                        <div className="grid grid-cols-3 gap-2 text-xs mt-2">
-                          <div className="bg-muted/40 p-2 rounded"><p className="text-muted-foreground">Footprint</p><p className="font-bold">{item.building_footprint_m2} m²</p></div>
-                          <div className="bg-muted/40 p-2 rounded"><p className="text-muted-foreground">Wall Length</p><p className="font-bold">{item.wall_length_m} m</p></div>
-                          <div className="bg-muted/40 p-2 rounded"><p className="text-muted-foreground">Source</p><p className="font-bold">DXF Geometry</p></div>
+                      {/* Show extracted fields */}
+                      {item.fields && Object.keys(item.fields).length > 0 && (
+                        <div className="mt-2 grid grid-cols-2 gap-x-4 text-xs">
+                          {Object.entries(item.fields).slice(0, 12).map(([k, v]: any) => (
+                            <div key={k} className="flex justify-between py-0.5 border-b">
+                              <span className="text-muted-foreground">{k.replace(/_/g,' ')}</span>
+                              <span className="font-mono">{typeof v === 'object' ? JSON.stringify(v) : String(v ?? '—')}</span>
+                            </div>
+                          ))}
                         </div>
                       )}
                       {item.warnings?.length > 0 && (
@@ -336,10 +363,11 @@ export default function BBSPage() {
                   </Card>
                 ))}
                 <div className="p-3 bg-muted/40 rounded-lg border text-sm">
-                  <p className="font-semibold mb-1">Next step:</p>
-                  <p className="text-muted-foreground">
-                    Review the extracted values. Switch to <strong>Manual BBS</strong> tab to create a BBS sheet
-                    and enter/verify the values from this extraction. Use the extracted dimensions as your input reference.
+                  <p className="font-semibold mb-1">Next steps:</p>
+                  <p className="text-muted-foreground text-xs">
+                    {autoResult.instructions || (
+                      'This file is now in your project workspace. Switch to Drawings & Schedules to query members and generate BBS automatically, or use Manual BBS to enter verified values.'
+                    )}
                   </p>
                 </div>
               </div>

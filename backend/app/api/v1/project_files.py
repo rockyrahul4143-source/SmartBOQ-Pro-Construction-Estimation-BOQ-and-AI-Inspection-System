@@ -5,7 +5,7 @@ Handles: multi-file upload, extraction, cross-file query,
 natural-language BBS calculation, complete project BBS generation.
 """
 from __future__ import annotations
-import json, os, uuid, math
+import json, os, uuid, math, re
 from typing import List, Optional
 from datetime import datetime
 
@@ -352,7 +352,8 @@ async def generate_bbs_from_files(
 # CORE BBS GENERATION
 # ═══════════════════════════════════════════════════════
 
-import re as _re
+# re is imported at module top — remove redundant local alias
+_re = re
 
 def _get(dataset: dict, key: str, default=None):
     """Safe get from bbs_inputs dict."""

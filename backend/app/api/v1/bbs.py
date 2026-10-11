@@ -4,7 +4,7 @@ BBS API — Bar Bending Schedule
 Manual BBS, Auto BBS from drawings, calculations, Excel/PDF export.
 """
 from __future__ import annotations
-import io, uuid
+import io, uuid, json
 from typing import List, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
@@ -515,65 +515,153 @@ async def extract_drawing(
     current_user: User = Depends(get_current_active_user),
 ):
     """
-    Upload DXF/DWG/PDF structural drawing.
-    Extracts member information and returns extraction review for engineer confirmation.
+    Upload DXF/PDF/PNG/XLSX drawing or schedule from the Auto from Drawing tab.
+    - Runs through the SAME extraction pipeline as Drawings & Schedules.
+    - Saves a ProjectFile record so the file is visible in Drawings & Schedules.
+    - Returns extraction review for engineer confirmation.
+    - DXF: full geometry extraction.
+    - PDF (text-layer): schedule parsing (beams/columns/stirrups).
+    - PDF (scanned): OCR attempted; uncertain values flagged as VERIFY REQUIRED.
+    - DWG: user is guided to convert to DXF.
     """
+    from app.models.project_file import ProjectFile as PF
+    from app.services.bbs_extractor import extract_file
+    import os as _os
+
     _check_project(db, project_id, current_user)
-    fname = (file.filename or "").lower()
+    fname   = file.filename or "upload"
     content = await file.read()
+    ftype_map = {".dxf":"dxf",".dwg":"dwg",".pdf":"pdf",
+                 ".png":"image",".jpg":"image",".jpeg":"image",
+                 ".xlsx":"xlsx",".csv":"csv"}
+    ext   = _os.path.splitext(fname.lower())[1]
+    ftype = ftype_map.get(ext, "other")
 
-    extracted = []
+    # ── DWG: honest guidance, no extraction ─────────────
+    if ftype == "dwg":
+        return {
+            "project_id": str(project_id),
+            "filename": fname,
+            "member_query": member_query,
+            "extracted": [{
+                "member_mark": member_query,
+                "source": "dwg_upload",
+                "status": "not_supported",
+                "message": (
+                    "DWG binary format cannot be read directly. "
+                    "Open in AutoCAD or FreeCAD → File → Save As → DXF 2010 ASCII, "
+                    "then re-upload the .dxf file."
+                ),
+            }],
+            "instructions": "Convert DWG to DXF first, then re-upload.",
+        }
 
-    if fname.endswith(".dxf"):
-        from app.services.dxf_parser import parse_dxf_bytes
-        result = parse_dxf_bytes(content)
-        d = result.to_dict()
-        # Return geometry info as extracted member data
-        diag = d.get("diagnostics", {})
-        ext = d.get("drawing_extents", diag.get("drawing_extents", {}))
-        extracted.append({
-            "member_mark": "BUILDING",
-            "source": "dxf_geometry",
-            "clear_span_mm": ext.get("width_drawing_units", 0) * d.get("scale_factor", 0.001),
-            "building_footprint_m2": d.get("building_footprint_area_m2", 0),
-            "wall_length_m": d.get("total_wall_length_m", 0),
-            "status": "measured",
-            "warnings": d.get("warnings", []),
-            "diagnostics": diag,
-        })
+    # ── Run real extraction pipeline ─────────────────────
+    extracted_data = extract_file(content, fname, ftype)
+    marks = extracted_data.get("member_list", [])
+    cap   = "; ".join(extracted_data.get("capability_notes", []))
 
-    elif fname.endswith((".pdf",)):
-        extracted.append({
-            "member_mark": member_query,
-            "source": "pdf_upload",
-            "status": "verify_required",
-            "message": (
-                "PDF uploaded. Automatic text extraction from PDF structural schedules "
-                "is not yet implemented. Please use the Manual BBS entry form to enter "
-                "values from this schedule, or upload a DXF file for geometry extraction."
+    # Persist file to shared project file store (same as Drawings & Schedules upload)
+    fpath = None
+    try:
+        from app.core.config import settings as _settings
+        import os as _os2
+        d = _os2.path.join(_settings.UPLOAD_DIR, "bbs_files", str(project_id))
+        _os2.makedirs(d, exist_ok=True)
+        safe = f"{uuid.uuid4().hex[:8]}_{_os2.path.basename(fname)}"
+        fpath = _os2.path.join(d, safe)
+        with open(fpath, "wb") as _f:
+            _f.write(content)
+    except Exception:
+        pass
+
+    # Check for duplicate (same original_name in this project)
+    existing = db.query(PF).filter(
+        PF.project_id == str(project_id),
+        PF.original_name == fname
+    ).first()
+
+    if not existing:
+        pf = PF(
+            project_id=str(project_id),
+            filename=_os.path.basename(fpath) if fpath else fname,
+            original_name=fname, file_type=ftype,
+            file_category=extracted_data.get("category", "auto"),
+            file_path=fpath, file_size_kb=round(len(content)/1024, 1),
+            extraction_status=extracted_data.get("extraction_status", "pending"),
+            extracted_data=json.dumps(extracted_data),
+            member_count=len(marks), member_list=",".join(marks),
+            extraction_notes=(
+                "\n".join(extracted_data.get("warnings", []))
+                + (f"\nCapabilities: {cap}" if cap else "")
             ),
-        })
+            uploaded_by=str(current_user.id),
+        )
+        db.add(pf)
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
 
+    # ── Build extraction review ──────────────────────────
+    beams   = extracted_data.get("beams",   {})
+    columns = extracted_data.get("columns", {})
+
+    # Determine which marks to review based on member_query
+    if member_query.strip().lower() == "all":
+        review_marks = list(beams.keys()) + list(columns.keys())
     else:
-        extracted.append({
-            "member_mark": member_query,
-            "source": "unknown_format",
-            "status": "verify_required",
+        review_marks = [m.strip().upper() for m in member_query.replace(",", " ").split() if m.strip()]
+
+    extracted_list = []
+
+    if review_marks:
+        for mark in review_marks:
+            member_data = beams.get(mark) or columns.get(mark, {})
+            status = "found" if member_data else "verify_required"
+            entry = {
+                "member_mark": mark,
+                "source": extracted_data.get("extraction_method", ftype),
+                "status": status,
+                "fields": member_data,
+                "warnings": extracted_data.get("warnings", []),
+            }
+            if not member_data:
+                entry["message"] = f"Member '{mark}' not found in extracted data. Verify drawing/schedule."
+            extracted_list.append(entry)
+    else:
+        # No specific members requested — return a summary
+        status_msg = extracted_data.get("extraction_status", "pending")
+        extracted_list.append({
+            "member_mark": member_query or "ALL",
+            "source": extracted_data.get("extraction_method", ftype),
+            "status": status_msg,
+            "members_found": marks,
             "message": (
-                f"File format '{fname.split('.')[-1].upper()}' is not directly supported. "
-                "Supported: DXF (geometry extraction), PDF (manual schedule reference). "
-                "For DWG files: open in AutoCAD → Save As → DXF 2010 ASCII, then re-upload."
+                f"Found {len(marks)} members: {', '.join(marks[:10])}{'...' if len(marks) > 10 else ''}"
+                if marks else
+                "No members extracted. Check file format and content."
             ),
+            "warnings": extracted_data.get("warnings", []),
+            "global_params": extracted_data.get("global_params", {}),
         })
 
     return {
         "project_id": str(project_id),
-        "filename": file.filename,
+        "filename": fname,
         "member_query": member_query,
-        "extracted": extracted,
+        "extraction_method": extracted_data.get("extraction_method", ""),
+        "extraction_status": extracted_data.get("extraction_status", ""),
+        "members_found": marks,
+        "file_saved_to_project": existing is None,
+        "extracted": extracted_list,
+        "global_params": extracted_data.get("global_params", {}),
+        "warnings": extracted_data.get("warnings", []),
         "instructions": (
-            "Review the extracted values below. Edit any incorrect values, "
-            "then click 'Create BBS from Extraction' to generate the BBS sheet."
+            "Review the extracted values. Members with VERIFY status need manual confirmation. "
+            "This file has been added to your Drawings & Schedules project workspace. "
+            "Switch to Manual BBS to create a calculation sheet, or use Drawings & Schedules "
+            "for automatic NL-driven BBS generation."
         ),
     }
 
