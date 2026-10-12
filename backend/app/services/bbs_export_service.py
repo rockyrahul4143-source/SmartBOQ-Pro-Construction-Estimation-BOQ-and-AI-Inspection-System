@@ -8,10 +8,8 @@ import io
 import os
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Font, Border, Side, Alignment, PatternFill
-from openpyxl.utils.dataframe import dataframe_to_rows
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
