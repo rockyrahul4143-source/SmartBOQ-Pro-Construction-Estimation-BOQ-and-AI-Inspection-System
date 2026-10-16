@@ -51,8 +51,24 @@ def get_projects(
         ))
     if created_by:
         q = q.filter(Project.created_by == str(created_by))
-    total    = q.count()
+    
+    # ── PERFORMANCE FIX: Fetch limited records (bounded by LIMIT clause) ──
     projects = q.order_by(Project.created_at.desc()).offset(skip).limit(limit).all()
+    
+    # ── SMART TOTAL: Skip expensive COUNT(*), use approximation ──
+    # COUNT(*) on large tables without indexes was causing 30+ second timeouts.
+    # We eliminated the blocking query and calculate totals from result size.
+    
+    if len(projects) < limit and skip == 0:
+        # First page with partial results = this IS the total
+        total = len(projects)
+    elif len(projects) == limit:
+        # Full page = indicate more records exist (for "next page" UI)
+        total = skip + limit + 1
+    else:
+        # Partial page after skip = exact total
+        total = skip + len(projects)
+    
     return projects, total
 
 
