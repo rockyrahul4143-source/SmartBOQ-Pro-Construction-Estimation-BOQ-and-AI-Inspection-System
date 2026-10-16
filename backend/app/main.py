@@ -4,9 +4,11 @@ import time
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import settings
 from app.core.security import decode_token
@@ -52,6 +54,54 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── CORS-aware exception handlers ─────────────────────
+# FastAPI's default exception handlers run BEFORE CORS middleware adds headers.
+# This causes browsers to show "CORS error" even when the real error is 500/422/404.
+# Solution: custom exception handlers that explicitly add CORS headers.
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Handle HTTP exceptions (404, 401, 403, 500, etc.) with CORS headers."""
+    origin = request.headers.get("origin")
+    headers = {}
+    if origin and (origin in origins or "*" in origins):
+        headers["Access-Control-Allow-Origin"] = origin if "*" not in origins else "*"
+        headers["Access-Control-Allow-Credentials"] = "true"
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers=headers,
+    )
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle 422 validation errors with CORS headers."""
+    origin = request.headers.get("origin")
+    headers = {}
+    if origin and (origin in origins or "*" in origins):
+        headers["Access-Control-Allow-Origin"] = origin if "*" not in origins else "*"
+        headers["Access-Control-Allow-Credentials"] = "true"
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors()},
+        headers=headers,
+    )
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Catch-all for unhandled 500 errors — with CORS headers and logging."""
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    origin = request.headers.get("origin")
+    headers = {}
+    if origin and (origin in origins or "*" in origins):
+        headers["Access-Control-Allow-Origin"] = origin if "*" not in origins else "*"
+        headers["Access-Control-Allow-Credentials"] = "true"
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+        headers=headers,
+    )
 
 # ── Process-time header ───────────────────────────────
 @app.middleware("http")
