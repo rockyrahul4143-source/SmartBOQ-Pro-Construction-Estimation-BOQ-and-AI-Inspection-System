@@ -35,6 +35,36 @@ class ProjectBase(BaseModel):
             raise ValueError("Number of floors must be between 1 and 200")
         return v
 
+    @field_validator("building_type", mode="before")
+    @classmethod
+    def normalize_building_type(cls, v):
+        """Normalize uppercase enum values from old database records"""
+        if isinstance(v, str):
+            # Convert uppercase to lowercase to match enum values
+            v_lower = v.lower()
+            # Check if it matches any enum value
+            for item in BuildingType:
+                if item.value == v_lower:
+                    return item
+            # If no match, return as-is and let Pydantic raise proper validation error
+            return v
+        return v
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def normalize_status(cls, v):
+        """Normalize uppercase enum values from old database records"""
+        if isinstance(v, str):
+            # Convert uppercase to lowercase to match enum values
+            v_lower = v.lower()
+            # Check if it matches any enum value
+            for item in ProjectStatus:
+                if item.value == v_lower:
+                    return item
+            # If no match, return as-is and let Pydantic raise proper validation error
+            return v
+        return v
+
 
 # ── Create ────────────────────────────────────────────
 class ProjectCreate(ProjectBase):
@@ -89,6 +119,30 @@ class ProjectListItem(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @field_validator("building_type", mode="before")
+    @classmethod
+    def normalize_building_type(cls, v):
+        """Normalize uppercase enum values from old database records"""
+        if isinstance(v, str):
+            v_lower = v.lower()
+            for item in BuildingType:
+                if item.value == v_lower:
+                    return item
+            return v
+        return v
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def normalize_status(cls, v):
+        """Normalize uppercase enum values from old database records"""
+        if isinstance(v, str):
+            v_lower = v.lower()
+            for item in ProjectStatus:
+                if item.value == v_lower:
+                    return item
+            return v
+        return v
 
 
 class ProjectStats(BaseModel):
