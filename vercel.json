@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "buildCommand": "cd frontend && npm install --foreground-scripts && npm run build",
+  "buildCommand": "npm run build --prefix frontend",
   "outputDirectory": "frontend/dist",
-  "installCommand": "echo skip-root-install",
+  "installCommand": "npm install --prefix frontend --foreground-scripts",
   "framework": null,
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
