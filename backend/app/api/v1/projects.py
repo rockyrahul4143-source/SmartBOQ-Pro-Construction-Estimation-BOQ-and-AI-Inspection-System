@@ -48,7 +48,7 @@ def list_projects(
         "total": total,
         "skip": skip,
         "limit": limit,
-        "data": [ProjectListItem.model_validate(p) for p in projects],
+        "data": [ProjectListItem.model_validate(p).model_dump(mode='json') for p in projects],
     }
 
 
