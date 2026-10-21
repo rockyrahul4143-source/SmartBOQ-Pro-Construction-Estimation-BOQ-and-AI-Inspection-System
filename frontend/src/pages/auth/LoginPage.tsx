@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { HardHat, Eye, EyeOff, Loader2 } from 'lucide-react'
+import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -42,9 +42,9 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center h-16 w-16 rounded-2xl bg-white/20 backdrop-blur mb-4">
-            <HardHat className="h-8 w-8 text-amber-400" />
+            <img src="/civnexis-icon.svg" alt="" className="h-8 w-8" />
           </div>
-          <h1 className="text-3xl font-bold text-white">SmartBOQ Pro</h1>
+          <h1 className="text-3xl font-bold text-white">Civnexis</h1>
           <p className="text-white/70 mt-1">Construction Estimation System</p>
         </div>
 
@@ -91,7 +91,7 @@ export default function LoginPage() {
             </form>
           </CardContent>
         </Card>
-        <p className="text-center text-xs text-white/40 mt-6">© {new Date().getFullYear()} SmartBOQ Pro · Rahul Singh. All rights reserved.</p>
+        <p className="text-center text-xs text-white/40 mt-6">© {new Date().getFullYear()} Civnexis · Rahul Singh. All rights reserved.</p>
       </div>
     </div>
   )

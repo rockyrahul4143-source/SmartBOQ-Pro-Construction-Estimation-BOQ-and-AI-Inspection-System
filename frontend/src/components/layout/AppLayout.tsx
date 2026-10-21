@@ -25,7 +25,7 @@ const TITLES: Record<string, string> = {
 export default function AppLayout() {
   const loc = useLocation()
   const base = '/' + loc.pathname.split('/')[1]
-  const title = TITLES[base] ?? 'SmartBOQ Pro'
+  const title = TITLES[base] ?? 'Civnexis'
 
   // On mobile: drawer closed by default; on desktop: sidebar always open
   const [mobileOpen, setMobileOpen] = useState(false)

@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import {
   LayoutDashboard, FolderOpen, Building2, Calculator, Package,
-  FileText, BarChart3, Upload, Eye, LogOut, HardHat,
+  FileText, BarChart3, Upload, Eye, LogOut,
   BookOpen, Ruler, TrendingUp, Receipt, X, ListChecks,
 } from 'lucide-react'
 
@@ -57,14 +57,14 @@ export default function Sidebar({ collapsed, mobileOpen, onMobileClose }: Sideba
     )}>
       {/* Logo */}
       <div className="flex h-16 items-center gap-3 px-4 border-b border-white/10 shrink-0">
-        <HardHat className="h-7 w-7 shrink-0 text-amber-400" />
+        <img src="/civnexis-icon.svg" alt="" className="h-7 w-7 shrink-0" />
         {/* Always show text on mobile drawer; on desktop hide when collapsed */}
         <div className={cn('lg:hidden')}>
-          <p className="font-bold text-sm leading-tight">SmartBOQ Pro</p>
+          <p className="font-bold text-sm leading-tight">Civnexis</p>
           <p className="text-xs text-white/60">Civil Engineering Suite</p>
         </div>
         <div className={cn('hidden', !collapsed && 'lg:block')}>
-          <p className="font-bold text-sm leading-tight">SmartBOQ Pro</p>
+          <p className="font-bold text-sm leading-tight">Civnexis</p>
           <p className="text-xs text-white/60">Civil Engineering Suite</p>
         </div>
         {/* Close button — mobile only */}

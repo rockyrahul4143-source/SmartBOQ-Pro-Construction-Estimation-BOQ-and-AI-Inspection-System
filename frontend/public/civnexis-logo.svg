@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 80" role="img" aria-label="Civnexis">
+  <g transform="translate(4 8)">
+    <rect width="64" height="64" rx="14" fill="#fff"/>
+    <path d="M14 51h36M19 47V29l13-12 13 12v18M26 47V36h12v11M25 28h.01M39 28h.01" fill="none" stroke="#142b4a" stroke-linecap="round" stroke-linejoin="round" stroke-width="3.5"/>
+    <path d="M32 17V11m-9 18h-6m24 0h6" fill="none" stroke="#18a7a0" stroke-linecap="round" stroke-width="3"/>
+    <circle cx="32" cy="10" r="3.5" fill="#18a7a0"/>
+    <circle cx="16" cy="29" r="3.5" fill="#18a7a0"/>
+    <circle cx="48" cy="29" r="3.5" fill="#18a7a0"/>
+  </g>
+  <text x="82" y="55" fill="#142b4a" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="700" letter-spacing="-1.5">Civnexis</text>
+</svg>

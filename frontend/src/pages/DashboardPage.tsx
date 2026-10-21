@@ -186,7 +186,7 @@ export default function DashboardPage() {
 
       {/* Footer branding */}
       <p className="text-xs text-muted-foreground text-center pb-2">
-        SmartBOQ Pro · Built by Rahul Singh · © {new Date().getFullYear()}
+        Civnexis · Built by Rahul Singh · © {new Date().getFullYear()}
       </p>
     </div>
   )
