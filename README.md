@@ -1,4 +1,4 @@
-# SmartBOQ Pro — AI-Powered Construction Estimation & Inspection System
+# Civnexis— AI-Powered Construction Estimation & Inspection System
 
 <div align="center">
 
